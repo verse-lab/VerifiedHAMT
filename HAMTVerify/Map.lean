@@ -64,16 +64,16 @@ instance : Membership α (Map α β) := ⟨fun map key => HAMTVerify.Mem key map
 def MapsTo (map : Map α β) (key : α) (value : β) : Prop :=
   HAMTVerify.MapsTo key value map.toRaw
 
-@[simp] theorem toRaw_ofRaw (raw : Lean.PersistentHashMap α β)
+@[scoped simp] theorem toRaw_ofRaw (raw : Lean.PersistentHashMap α β)
     (valid : Valid raw) (unique : Unique raw.root) :
     (ofRaw raw valid unique).toRaw = raw := rfl
 
-@[simp] theorem ofRaw_toRaw (map : Map α β) :
+@[scoped simp] theorem ofRaw_toRaw (map : Map α β) :
     ofRaw map.toRaw map.valid map.unique = map := rfl
 
-@[simp] theorem toRaw_empty : (∅ : Map α β).toRaw = Lean.PersistentHashMap.empty := rfl
+@[scoped simp] theorem toRaw_empty : (∅ : Map α β).toRaw = Lean.PersistentHashMap.empty := rfl
 
-@[simp] theorem toRaw_insert [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
+@[scoped simp] theorem toRaw_insert [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
     (map.insert key value).toRaw = HAMTVerify.insert map.toRaw key value := rfl
 
 theorem contains_eq_true_iff [LawfulBEq α] (map : Map α β) (key : α) :
@@ -96,35 +96,35 @@ theorem MapsTo.functional {map : Map α β} {key : α} {v w : β}
     (hv : map.MapsTo key v) (hw : map.MapsTo key w) : v = w :=
   HasBinding.functional map.valid map.unique hv hw
 
-@[simp] theorem not_mem_empty (key : α) : key ∉ (∅ : Map α β) :=
+@[scoped simp] theorem not_mem_empty (key : α) : key ∉ (∅ : Map α β) :=
   HAMTVerify.not_mem_empty key
 
-@[simp] theorem not_mapsTo_empty (key : α) (value : β) :
+@[scoped simp] theorem not_mapsTo_empty (key : α) (value : β) :
     ¬ (∅ : Map α β).MapsTo key value :=
   fun h => not_mem_empty key h.hasKey
 
-@[simp] theorem contains_empty [LawfulBEq α] (key : α) :
+@[scoped simp] theorem contains_empty [LawfulBEq α] (key : α) :
     (∅ : Map α β).contains key = false := HAMTVerify.contains_empty key
 
-@[simp] theorem contains_insert [LawfulBEq α] (map : Map α β) (key q : α) (value : β) :
+@[scoped simp] theorem contains_insert [LawfulBEq α] (map : Map α β) (key q : α) (value : β) :
     (map.insert key value).contains q = ((q == key) || map.contains q) :=
   HAMTVerify.contains_insert map.toRaw map.valid key q value
 
-@[simp] theorem contains_insert_self [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
+@[scoped simp] theorem contains_insert_self [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
     (map.insert key value).contains key = true :=
   HAMTVerify.contains_insert_self map.toRaw map.valid key value
 
-@[simp] theorem mem_insert_iff [LawfulBEq α] (map : Map α β) (key q : α) (value : β) :
+@[scoped simp] theorem mem_insert_iff [LawfulBEq α] (map : Map α β) (key q : α) (value : β) :
     q ∈ map.insert key value ↔ q = key ∨ q ∈ map :=
   HAMTVerify.mem_insert_iff map.toRaw map.valid key q value
 
-@[simp] theorem mapsTo_insert_iff [LawfulBEq α]
+@[scoped simp] theorem mapsTo_insert_iff [LawfulBEq α]
     (map : Map α β) (key q : α) (value w : β) :
     (map.insert key value).MapsTo q w ↔
       (q = key ∧ w = value) ∨ (q ≠ key ∧ map.MapsTo q w) :=
   HAMTVerify.mapsTo_insert_iff map.toRaw map.valid map.unique key q value w
 
-@[simp] theorem mapsTo_insert_self [LawfulBEq α]
+@[scoped simp] theorem mapsTo_insert_self [LawfulBEq α]
     (map : Map α β) (key : α) (value w : β) :
     (map.insert key value).MapsTo key w ↔ w = value :=
   HAMTVerify.mapsTo_insert_self map.toRaw map.valid map.unique key value w

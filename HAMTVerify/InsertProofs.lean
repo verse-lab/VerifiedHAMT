@@ -6,11 +6,11 @@ open Lean.PersistentHashMap
 
 variable {α : Type u} {β : Type v}
 
-@[simp] theorem hasKey_mkCollisionNode (k₁ k₂ q : α) (v₁ v₂ : β) :
+@[scoped simp] theorem hasKey_mkCollisionNode (k₁ k₂ q : α) (v₁ v₂ : β) :
     HasKey q (mkCollisionNode k₁ v₁ k₂ v₂) ↔ q = k₁ ∨ q = k₂ := by
   simp [mkCollisionNode]
 
-@[simp] theorem hasBinding_mkCollisionNode (k₁ k₂ q : α) (v₁ v₂ w : β) :
+@[scoped simp] theorem hasBinding_mkCollisionNode (k₁ k₂ q : α) (v₁ v₂ w : β) :
     HasBinding q w (mkCollisionNode k₁ v₁ k₂ v₂) ↔
       (q = k₁ ∧ w = v₁) ∨ (q = k₂ ∧ w = v₂) := by
   simp only [mkCollisionNode, hasBinding_collision, Array.size_push, Array.mkEmpty, Array.size_empty]
@@ -473,7 +473,7 @@ theorem mapsTo_insert_iff [BEq α] [LawfulBEq α] [Hashable α]
       (q = key ∧ w = value) ∨ (q ≠ key ∧ MapsTo q w map) := by
   simpa only [MapsTo, insert_root_eq] using (insertNode_unique_updated _ _ map.root wf hu key value).2 q w
 
-@[simp] theorem mapsTo_insert_self [BEq α] [LawfulBEq α] [Hashable α]
+@[scoped simp] theorem mapsTo_insert_self [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
     (key : α) (value w : β) : MapsTo key w (insert map key value) ↔ w = value := by
   simp [mapsTo_insert_iff map wf hu]
@@ -492,7 +492,7 @@ theorem contains_insert [BEq α] [LawfulBEq α] [Hashable α]
   rw [contains_eq_true_iff _ (valid_insert map wf key value), mem_insert_iff map wf]
   simp [contains_eq_true_iff map wf]
 
-@[simp] theorem contains_insert_self [BEq α] [LawfulBEq α] [Hashable α]
+@[scoped simp] theorem contains_insert_self [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (key : α) (value : β) :
     contains (insert map key value) key = true := by
   simp [contains_insert map wf]

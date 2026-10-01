@@ -29,7 +29,7 @@ def EntryHasKey (key : α) : Entry α β (Node α β) → Prop
   | .entry key' _ => key = key'
   | .ref child => HasKey key child
 
-@[simp] theorem hasKey_collision {keys : Array α} {vals : Array β}
+@[scoped simp] theorem hasKey_collision {keys : Array α} {vals : Array β}
     {hsz : keys.size = vals.size} {key : α} :
     HasKey key (.collision keys vals hsz) ↔ key ∈ keys := by
   constructor
@@ -59,7 +59,7 @@ theorem hasKey_entries {es : Array (Entry α β (Node α β))} {key : α} :
 
 @[inline] def nextHash (hash : USize) : USize := div2Shift hash shift
 
-@[simp] theorem slot_zero : slot 0 = 0 := by
+@[scoped simp] theorem slot_zero : slot 0 = 0 := by
   change ((0 : USize) &&& ((1 : USize) <<< shift - 1)).toNat = 0
   simp
 
@@ -115,11 +115,11 @@ theorem wellFormed_empty (hashAt : α → USize) :
   · intro i hi child hc
     simp [mkEmptyEntriesArray] at hc
 
-@[simp] theorem valid_empty [BEq α] [Hashable α] :
+@[scoped simp] theorem valid_empty [BEq α] [Hashable α] :
     Valid (Lean.PersistentHashMap.empty : Lean.PersistentHashMap α β) :=
   wellFormed_empty _
 
-@[simp] theorem not_mem_empty [BEq α] [Hashable α] (key : α) :
+@[scoped simp] theorem not_mem_empty [BEq α] [Hashable α] (key : α) :
     ¬ Mem key (Lean.PersistentHashMap.empty : Lean.PersistentHashMap α β) := by
   simp [Mem, Lean.PersistentHashMap.empty, hasKey_entries, mkEmptyEntriesArray, EntryHasKey]
 

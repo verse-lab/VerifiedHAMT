@@ -4,6 +4,8 @@ import HAMTVerify.Map
 
 namespace HAMTVerify.MapTests
 
+open HAMTVerify.Map
+
 example [BEq α] [LawfulBEq α] [Hashable α] (map : Map α β) (key : α) :
     map.contains key = true ↔ key ∈ map := Map.contains_eq_true_iff map key
 

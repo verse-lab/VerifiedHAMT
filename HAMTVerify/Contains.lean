@@ -90,7 +90,7 @@ theorem containsAt_eq_true_iff [BEq α] [LawfulBEq α] (keys : Array α) (i : Na
     omega
 termination_by keys.size - i
 
-@[simp] theorem containsAt_zero_eq_true_iff [BEq α] [LawfulBEq α]
+@[scoped simp] theorem containsAt_zero_eq_true_iff [BEq α] [LawfulBEq α]
     (keys : Array α) (key : α) : containsAt keys 0 key = true ↔ key ∈ keys := by
   simp [containsAt_eq_true_iff, Array.mem_iff_getElem]
 
@@ -160,7 +160,7 @@ theorem contains_eq_false_iff [BEq α] [LawfulBEq α] [Hashable α]
   rw [← contains_eq_true_iff map wf key]
   cases contains map key <;> simp
 
-@[simp] theorem contains_empty [BEq α] [LawfulBEq α] [Hashable α] (key : α) :
+@[scoped simp] theorem contains_empty [BEq α] [LawfulBEq α] [Hashable α] (key : α) :
     contains (Lean.PersistentHashMap.empty : Lean.PersistentHashMap α β) key = false :=
   (contains_eq_false_iff _ valid_empty key).mpr (not_mem_empty key)
 

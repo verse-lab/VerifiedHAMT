@@ -24,7 +24,7 @@ def EntryHasBinding (key : α) (value : β) : Entry α β (Node α β) → Prop
   | .entry k v => key = k ∧ value = v
   | .ref child => HasBinding key value child
 
-@[simp] theorem hasBinding_collision {keys : Array α} {vals : Array β}
+@[scoped simp] theorem hasBinding_collision {keys : Array α} {vals : Array β}
     {hsz : keys.size = vals.size} {key : α} {value : β} :
     HasBinding key value (.collision keys vals hsz) ↔
       ∃ (i : Nat) (hi : i < keys.size), keys[i] = key ∧ vals[i]'(hsz ▸ hi) = value := by
