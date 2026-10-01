@@ -1,6 +1,7 @@
 import HAMTVerify
 import Tests.Insert
 import Tests.MapIR
+import Tests.SetIR
 
 /-!
 Kernel-checked examples and executable comparisons against the upstream partial
@@ -106,3 +107,4 @@ def main : IO Unit := do
   HAMTVerify.Tests.run
   HAMTVerify.InsertTests.run
   HAMTVerify.MapTests.run
+  HAMTVerify.SetTests.run

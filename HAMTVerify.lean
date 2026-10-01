@@ -7,3 +7,4 @@ import HAMTVerify.Insert
 import HAMTVerify.InsertCachedProofs
 import HAMTVerify.InsertProofs
 import HAMTVerify.Map
+import HAMTVerify.Set
