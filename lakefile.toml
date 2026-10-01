@@ -1,0 +1,23 @@
+name = "HAMTVerify"
+version = "0.1.0"
+defaultTargets = ["HAMTVerify"]
+testDriver = "containsTests"
+
+[[lean_lib]]
+name = "HAMTVerify"
+
+[[lean_lib]]
+name = "Tests"
+globs = ["Tests.+"]
+
+[[lean_exe]]
+name = "containsTests"
+root = "Tests.Contains"
+
+[[lean_exe]]
+name = "containsBench"
+root = "Benchmarks.Contains"
+
+[[lean_exe]]
+name = "insertBench"
+root = "Benchmarks.Insert"
