@@ -4,4 +4,5 @@ import HAMTVerify.Basic
 import HAMTVerify.Contains
 import HAMTVerify.Bindings
 import HAMTVerify.Insert
+import HAMTVerify.InsertCachedProofs
 import HAMTVerify.InsertProofs

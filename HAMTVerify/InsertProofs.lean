@@ -1,4 +1,4 @@
-import HAMTVerify.Insert
+import HAMTVerify.InsertCachedProofs
 
 namespace HAMTVerify
 
@@ -160,7 +160,7 @@ theorem insertEntries_wf_mem [BEq α] [LawfulBEq α]
       · rfl
       · cases wf with | entries _ route _ => exact route _ hi q hq
     · exact hasKey_set_iff _ hi e key mem
-  simp only [insertEntries, dif_pos hi]
+  simp only [insertEntries, Array.modify, Array.modifyM, dif_pos hi, Id.run, bind, pure]
   cases he : es[slot (hashAt key)] with
   | null =>
     refine finish _ ?_ ?_
@@ -200,7 +200,7 @@ theorem insertEntries_unique_updated [BEq α] [LawfulBEq α]
       Unique (.entries (es.set (slot (hashAt key)) e)) ∧
         Updated (.entries es) (.entries (es.set (slot (hashAt key)) e)) key value :=
     ⟨unique_set hu _ hi e hc, updated_set wf key value hi e upd⟩
-  simp only [insertEntries, dif_pos hi]
+  simp only [insertEntries, Array.modify, Array.modifyM, dif_pos hi, Id.run, bind, pure]
   cases he : es[slot (hashAt key)] with
   | null =>
     refine finish _ ?_ ?_
@@ -232,9 +232,9 @@ theorem insertNoExpand_entries [BEq α] (es : Array (Entry α β (Node α β)))
       .entries (insertEntries (fun n k v => insertNoExpand n (nextHash (hashAt k)) k v)
         hashAt es key value) := by
   rw [insertNoExpand]
-  simp only [insertEntries]
+  simp only [insertEntries, Array.modify, Array.modifyM, Id.run, bind, pure]
   split
-  · split <;> simp_all
+  · split <;> simp_all [Array.set_set]
   · rfl
 
 theorem insertNoExpand_wf_mem [BEq α] [LawfulBEq α] {hashAt : α → USize}
@@ -243,7 +243,7 @@ theorem insertNoExpand_wf_mem [BEq α] [LawfulBEq α] {hashAt : α → USize}
       ∀ q, HasKey q (insertNoExpand node (hashAt key) key value) ↔ q = key ∨ HasKey q node := by
   induction wf generalizing key value with
   | collision hashAt keys vals hsz =>
-    rw [insertNoExpand]
+    rw [insertNoExpand, insertCollision_eq ⟨keys, vals, hsz⟩]
     exact ⟨.collision _ _ _ _, fun q => insertAt_mem _ 0 key q value⟩
   | @entries hashAt es hs route children ih =>
     rw [insertNoExpand_entries]
@@ -257,7 +257,7 @@ theorem insertNoExpand_unique_updated [BEq α] [LawfulBEq α] {hashAt : α → U
       Updated node (insertNoExpand node (hashAt key) key value) key value := by
   induction wf generalizing key value with
   | collision hashAt keys vals hsz =>
-    rw [insertNoExpand]
+    rw [insertNoExpand, insertCollision_eq ⟨keys, vals, hsz⟩]
     cases hu with
     | collision distinct => exact insertAt_unique_updated _ distinct 0 key value (by omega)
   | @entries hashAt es hs route children ih =>
@@ -446,19 +446,19 @@ theorem insertNode_unique_updated [BEq α] [LawfulBEq α] (levels : Nat)
 /-- Insertion preserves the routing invariant even when the input has duplicate keys. -/
 theorem valid_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (key : α) (value : β) :
-    Valid (insert map key value) :=
-  (insertNode_wf_mem _ _ map.root wf key value).1
+    Valid (insert map key value) := by
+  simpa only [Valid, insert_root_eq] using (insertNode_wf_mem _ _ map.root wf key value).1
 
 /-- Exact membership update; uniqueness is not needed. -/
 theorem mem_insert_iff [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (key q : α) (value : β) :
-    Mem q (insert map key value) ↔ q = key ∨ Mem q map :=
-  (insertNode_wf_mem _ _ map.root wf key value).2 q
+    Mem q (insert map key value) ↔ q = key ∨ Mem q map := by
+  simpa only [Mem, insert_root_eq] using (insertNode_wf_mem _ _ map.root wf key value).2 q
 
 theorem unique_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
-    (key : α) (value : β) : Unique (insert map key value).root :=
-  (insertNode_unique_updated _ _ map.root wf hu key value).1
+    (key : α) (value : β) : Unique (insert map key value).root := by
+  simpa only [insert_root_eq] using (insertNode_unique_updated _ _ map.root wf hu key value).1
 
 /-- Abstract map binding, defined by the stored keys and values rather than lookup. -/
 def MapsTo [BEq α] [Hashable α] (key : α) (value : β)
@@ -470,8 +470,8 @@ theorem mapsTo_insert_iff [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
     (key q : α) (value w : β) :
     MapsTo q w (insert map key value) ↔
-      (q = key ∧ w = value) ∨ (q ≠ key ∧ MapsTo q w map) :=
-  (insertNode_unique_updated _ _ map.root wf hu key value).2 q w
+      (q = key ∧ w = value) ∨ (q ≠ key ∧ MapsTo q w map) := by
+  simpa only [MapsTo, insert_root_eq] using (insertNode_unique_updated _ _ map.root wf hu key value).2 q w
 
 @[simp] theorem mapsTo_insert_self [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)

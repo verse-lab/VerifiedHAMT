@@ -47,6 +47,9 @@ example [BEq α] [LawfulBEq α] (k : α) (v : β) (hashAt : α → USize) :
 /-- info: 'HAMTVerify.valid_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.valid_insert
+/-- info: 'HAMTVerify.insertNodeCached_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms HAMTVerify.insertNodeCached_eq
 /-- info: 'HAMTVerify.mem_insert_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.mem_insert_iff
