@@ -1,2 +1,5 @@
-/.lake
+/.lake/
 __pycache__/
+/Benchmarks/*
+!/Benchmarks/*.lean
+!/Benchmarks/*.py

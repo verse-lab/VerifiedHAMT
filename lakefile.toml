@@ -21,3 +21,11 @@ root = "Benchmarks.Contains"
 [[lean_exe]]
 name = "insertBench"
 root = "Benchmarks.Insert"
+
+[[lean_exe]]
+name = "setContainsBench"
+root = "Benchmarks.SetContains"
+
+[[lean_exe]]
+name = "setInsertBench"
+root = "Benchmarks.SetInsert"
