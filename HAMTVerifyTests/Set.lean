@@ -37,10 +37,21 @@ example [BEq α] [Hashable α] (set : Set α) :
 example (raw : Lean.PersistentHashSet Nat) (hv : Valid raw.set) (hu : Unique raw.set.root) :
     (Set.ofRaw raw hv hu).toRaw = raw := by simp
 
+-- The size counts elements: inserting a present element keeps it.
+example [BEq α] [LawfulBEq α] [Hashable α] (set : Set α) (key : α) :
+    ((set.insert key).insert key).size = (set.insert key).size := by
+  simp [Set.size_insert]
+
+example [BEq α] [Hashable α] (set : Set α) :
+    ∃ keys : List α, keys.Nodup ∧ (∀ k, k ∈ keys ↔ k ∈ set) ∧ keys.length = set.size :=
+  ⟨set.toList, set.nodup_toList, set.mem_toList, set.length_toList⟩
+
 #guard ({1, 2, 1} : Set Nat).contains 2
 #guard decide (2 ∈ ({1, 2, 1} : Set Nat))
 #guard !decide (3 ∈ ({1, 2, 1} : Set Nat))
 #guard !(∅ : Set Nat).contains 0
+#guard ({1, 2, 1} : Set Nat).size == 2
+#guard (Set.ofList [7, 3, 7]).toList.length == 2
 
 /-- info: 'HAMTVerify.Set.contains_eq_true_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -51,24 +62,37 @@ example (raw : Lean.PersistentHashSet Nat) (hv : Valid raw.set) (hu : Unique raw
 /-- info: 'HAMTVerify.Set.mem_ofList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Set.mem_ofList
+/-- info: 'HAMTVerify.Set.size_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Set.size_insert
+
+/-- The runtime data of `Set`: the native map and its size, without the proofs. -/
+structure SizedRaw (α : Type u) [BEq α] [Hashable α] where
+  toRaw : Lean.PersistentHashMap α Unit
+  size : Nat
 
 -- Paired entry points compare the wrapper to our verified map operations on
--- the native set representation, not to upstream's opaque partial constants.
+-- the set's runtime data, not to upstream's opaque partial constants.
 @[noinline] def wrappedInsert (set : Set Nat) (key : Nat) : Set Nat := set.insert key
 
-@[noinline] def rawInsert (set : Lean.PersistentHashSet Nat) (key : Nat) :
-    Lean.PersistentHashSet Nat := ⟨HAMTVerify.insert set.set key ()⟩
+/-- `Map.insert` on the runtime data; `Set.insert` passes the unit value to it. -/
+@[inline] def SizedRaw.insert (set : SizedRaw Nat) (key : Nat) (value : Unit) : SizedRaw Nat :=
+  let size := if HAMTVerify.contains set.toRaw key then set.size else set.size + 1
+  ⟨HAMTVerify.insert set.toRaw key value, size⟩
+
+@[noinline] def rawInsert (set : SizedRaw Nat) (key : Nat) : SizedRaw Nat := set.insert key ()
 
 @[noinline] def wrappedContains (set : Set Nat) (key : Nat) : Bool := set.contains key
 
-@[noinline] def rawContains (set : Lean.PersistentHashSet Nat) (key : Nat) : Bool :=
-  HAMTVerify.contains set.set key
+@[noinline] def rawContains (set : SizedRaw Nat) (key : Nat) : Bool :=
+  HAMTVerify.contains set.toRaw key
 
 private def checkSequence [BEq α] [LawfulBEq α] [Hashable α]
     (label : String) (keyOf : Nat → α) : IO Nat := do
   let mut set : Set α := ∅
   let mut native : Lean.PersistentHashSet α := ∅
   let mut model : List α := []
+  let mut modelSize := 0
   let queries := (List.range 104).map keyOf
   let mut checks := 0
   -- The first pass inserts distinct keys; the second pass inserts duplicates.
@@ -78,7 +102,10 @@ private def checkSequence [BEq α] [LawfulBEq α] [Hashable α]
     let oldModel := model
     set := set.insert key
     native := native.insert key
+    unless model.contains key do modelSize := modelSize + 1
     model := key :: model
+    unless set.size == modelSize && set.toList.length == modelSize do
+      throw <| IO.userError s!"{label}: set size mismatch"
     for q in queries do
       let expected := model.contains q
       unless set.contains q == expected && native.contains q == expected &&
@@ -91,6 +118,8 @@ private def checkSequence [BEq α] [LawfulBEq α] [Hashable α]
     unless bulk.contains q == model.contains q && imported.contains q == model.contains q do
       throw <| IO.userError s!"{label}: set bulk construction or import mismatch"
     checks := checks + 1
+  unless bulk.size == modelSize && imported.size == modelSize do
+    throw <| IO.userError s!"{label}: set bulk construction or import size mismatch"
   return checks
 
 private def checkNat (label : String) (hashFn : Nat → UInt64) : IO Nat := do
@@ -102,6 +131,6 @@ def run : IO Unit := do
   checks := checks + (← checkNat "shared-prefix" (fun n => n.toUInt64 <<< 15))
   checks := checks + (← checkNat "collisions" (fun _ => 0))
   checks := checks + (← checkSequence "names" (fun n => Lean.Name.num (.str .anonymous "set") n))
-  IO.println s!"set: {checks} comparisons passed, including duplicates, snapshots, bulk construction, and imports."
+  IO.println s!"set: {checks} comparisons passed, including duplicates, sizes, snapshots, bulk construction, and imports."
 
 end HAMTVerify.SetTests

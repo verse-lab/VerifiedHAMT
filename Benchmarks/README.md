@@ -54,7 +54,8 @@ Calibration warms both implementations and selects a common batch size targeting
 order. `Runtime.hold` keeps the observed checksum between the clock reads.
 Insertion timing includes allocation, reference counting, snapshot retention,
 result release, and one or two common native lookups per round; the reported
-ns/insert is an amortized workload cost.
+ns/insert is an amortized workload cost. Verified set insertion also looks each
+key up before inserting it, to maintain the set's size.
 
 [run.py](run.py) saves raw samples, per-operation medians, paired elapsed-time
 ratios, per-process median ratios, environment metadata, and source/executable

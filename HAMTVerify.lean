@@ -8,6 +8,7 @@ public import HAMTVerify.Bindings
 public import HAMTVerify.Insert
 public import HAMTVerify.InsertCachedProofs
 public import HAMTVerify.InsertProofs
+public import HAMTVerify.Size
 public import HAMTVerify.Map
 public import HAMTVerify.Set
 

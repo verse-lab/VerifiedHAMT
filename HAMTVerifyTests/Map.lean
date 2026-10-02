@@ -37,10 +37,21 @@ example : (Map.ofList [(1, 10), (2, 20), (1, 99)]).MapsTo 1 99 := by
 example : (Map.ofList [(1, 10), (2, 20), (1, 99)]).MapsTo 2 20 := by
   simp [Map.ofList]
 
+-- The size counts keys: overwriting keeps it, a new key adds one.
+example [BEq α] [LawfulBEq α] [Hashable α] (map : Map α β) (key : α) (v w : β) :
+    ((map.insert key v).insert key w).size = (map.insert key v).size := by
+  simp [Map.size_insert]
+
+example [BEq α] [Hashable α] (map : Map α β) :
+    ∃ keys : List α, keys.Nodup ∧ (∀ k, k ∈ keys ↔ k ∈ map) ∧ keys.length = map.size :=
+  ⟨map.keys, map.nodup_keys, map.mem_keys, map.length_keys⟩
+
 -- Standard collection notation and the executable structural membership instance.
 #guard ({(1, 10), (2, 20)} : Map Nat Nat).contains 2
 #guard decide (2 ∈ (Map.ofList [(1, 10), (2, 20)]))
 #guard !decide (3 ∈ (Map.ofList [(1, 10), (2, 20)]))
+#guard (Map.ofList [(1, 10), (2, 20), (1, 99)]).size == 2
+#guard (∅ : Map Nat Nat).size == 0
 
 /-- info: 'HAMTVerify.Map.contains_eq_true_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -48,19 +59,31 @@ example : (Map.ofList [(1, 10), (2, 20), (1, 99)]).MapsTo 2 20 := by
 /-- info: 'HAMTVerify.Map.mapsTo_insert_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Map.mapsTo_insert_iff
+/-- info: 'HAMTVerify.Map.size_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Map.size_insert
+/-- info: 'HAMTVerify.Map.length_keys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Map.length_keys
+
+/-- The runtime data of `Map`: the native map and its size, without the proofs. -/
+structure SizedRaw (α : Type u) (β : Type v) [BEq α] [Hashable α] where
+  toRaw : Lean.PersistentHashMap α β
+  size : Nat
 
 -- Compile paired entry points to inspect erasure of the wrapper and proof fields.
 @[noinline] def wrappedInsert (map : Map Nat Nat) (key value : Nat) : Map Nat Nat :=
   map.insert key value
 
-@[noinline] def rawInsert (map : Lean.PersistentHashMap Nat Nat) (key value : Nat) :
-    Lean.PersistentHashMap Nat Nat := HAMTVerify.insert map key value
+@[noinline] def rawInsert (map : SizedRaw Nat Nat) (key value : Nat) : SizedRaw Nat Nat :=
+  let size := if HAMTVerify.contains map.toRaw key then map.size else map.size + 1
+  ⟨HAMTVerify.insert map.toRaw key value, size⟩
 
 @[noinline] def wrappedContains (map : Map Nat Nat) (key : Nat) : Bool :=
   map.contains key
 
-@[noinline] def rawContains (map : Lean.PersistentHashMap Nat Nat) (key : Nat) : Bool :=
-  HAMTVerify.contains map key
+@[noinline] def rawContains (map : SizedRaw Nat Nat) (key : Nat) : Bool :=
+  HAMTVerify.contains map.toRaw key
 
 /-- Exercise bulk construction, collision promotion, snapshots, and the public
 membership decision through the bundled API. Native value lookup is only a test oracle. -/
@@ -77,6 +100,10 @@ def run : IO Unit := do
   unless original.toRaw.find? 7 == some 107 && changed.toRaw.find? 7 == some 999 &&
       changed.toRaw.find? 32 == some 132 do
     throw <| IO.userError "bundled map overwrite or snapshot mismatch"
-  IO.println "map: bundled API, bulk construction, collisions, overwrites, and snapshots passed."
+  let imported := Map.ofRaw changed.toRaw changed.valid changed.unique
+  unless original.size == 32 && changed.size == 33 && imported.size == 33 &&
+      changed.keys.length == 33 && (Map.ofList (bindings ++ bindings)).size == 32 do
+    throw <| IO.userError "bundled map size mismatch"
+  IO.println "map: bundled API, bulk construction, collisions, overwrites, sizes, and snapshots passed."
 
 end HAMTVerify.MapTests

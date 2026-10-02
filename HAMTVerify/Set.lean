@@ -9,8 +9,8 @@ import all Lean.Data.PersistentHashSet
 
 /-!
 A verified persistent set backed by `Map α Unit`, following the representation
-of Lean's `PersistentHashSet`. Routing and uniqueness proofs live in the map;
-set operations reuse its verified implementation and preservation theorems.
+of Lean's `PersistentHashSet`. Routing and uniqueness proofs and the size live in
+the map; set operations reuse its verified implementation and preservation theorems.
 -/
 
 namespace HAMTVerify
@@ -29,7 +29,8 @@ variable {α : Type u} [BEq α] [Hashable α]
 /-- Explicitly export the native persistent-set representation. -/
 @[inline] def toRaw (set : Set α) : Lean.PersistentHashSet α := ⟨set.toMap.toRaw⟩
 
-/-- Import a native set when both map invariants have been established. -/
+/-- Import a native set when both map invariants have been established. Its elements
+are counted, in time and memory linear in the size of the set. -/
 @[inline] def ofRaw (raw : Lean.PersistentHashSet α)
     (valid : Valid raw.set) (unique : Unique raw.set.root) : Set α :=
   ⟨Map.ofRaw raw.set valid unique⟩
@@ -40,7 +41,7 @@ variable {α : Type u} [BEq α] [Hashable α]
 instance : EmptyCollection (Set α) := ⟨empty⟩
 instance : Inhabited (Set α) := ⟨∅⟩
 
-/-- Insert an element, preserving both invariants automatically. -/
+/-- Insert an element, maintaining the invariants and the size automatically. -/
 @[inline] def insert [LawfulBEq α] (set : Set α) (key : α) : Set α :=
   ⟨set.toMap.insert key ()⟩
 
@@ -54,6 +55,12 @@ instance [LawfulBEq α] : LawfulSingleton α (Set α) := ⟨fun _ => rfl⟩
 
 /-- The verified hash-directed membership query. -/
 @[inline] def contains (set : Set α) (key : α) : Bool := set.toMap.contains key
+
+/-- The number of elements. -/
+@[inline] def size (set : Set α) : Nat := set.toMap.size
+
+/-- The elements, in the order of the native tree. -/
+def toList (set : Set α) : List α := set.toMap.keys
 
 /-- Structural membership inherited from the underlying map. -/
 instance : Membership α (Set α) := ⟨fun set key => key ∈ set.toMap⟩
@@ -70,7 +77,8 @@ instance [LawfulBEq α] (set : Set α) (key : α) : Decidable (key ∈ set) :=
     (ofRaw raw valid unique).toRaw = raw := rfl
 
 @[scoped simp] theorem ofRaw_toRaw (set : Set α) :
-    ofRaw set.toRaw set.toMap.valid set.toMap.unique = set := rfl
+    ofRaw set.toRaw set.toMap.valid set.toMap.unique = set :=
+  congrArg Set.mk (Map.ofRaw_toRaw set.toMap)
 
 @[scoped simp] theorem empty_eq_emptyc : (empty : Set α) = ∅ := rfl
 
@@ -91,6 +99,21 @@ theorem contains_eq_false_iff [LawfulBEq α] (set : Set α) (key : α) :
 
 @[scoped simp] theorem not_mem_empty (key : α) : key ∉ (∅ : Set α) :=
   Map.not_mem_empty key
+
+theorem mem_toList (set : Set α) (key : α) : key ∈ set.toList ↔ key ∈ set :=
+  Map.mem_keys set.toMap key
+
+theorem nodup_toList (set : Set α) : set.toList.Nodup := Map.nodup_keys set.toMap
+
+/-- `size` is the number of elements. -/
+theorem length_toList (set : Set α) : set.toList.length = set.size :=
+  Map.length_keys set.toMap
+
+@[scoped simp] theorem size_empty : (∅ : Set α).size = 0 := rfl
+
+theorem size_insert [LawfulBEq α] (set : Set α) (key : α) :
+    (set.insert key).size = if key ∈ set then set.size else set.size + 1 :=
+  Map.size_insert set.toMap key ()
 
 @[scoped simp] theorem contains_empty [LawfulBEq α] (key : α) :
     (∅ : Set α).contains key = false := Map.contains_empty key

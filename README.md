@@ -7,8 +7,9 @@ Verification of membership queries and insertion on Lean **v4.32.0**'s native
 
 Use `HAMTVerify.Map α β` for ordinary code. It bundles the native map with both
 `Valid` (hash routing) and `Unique` (no duplicate keys), following the
-[standard library's bundled tree-map design](https://lean-lang.org/doc/api/Std/Data/DTreeMap/Basic.html#Std.DTreeMap).
-Empty maps and insertions construct and preserve these proofs automatically.
+[standard library's bundled tree-map design](https://lean-lang.org/doc/api/Std/Data/DTreeMap/Basic.html#Std.DTreeMap),
+and with its number of keys, which the native map does not store.
+Empty maps and insertions construct and preserve these proofs and the size automatically.
 The public theorems require no separate invariant hypotheses:
 
 ```lean
@@ -21,6 +22,7 @@ def exampleMap : Map Nat String :=
 
 #eval exampleMap.contains 7 -- true
 #eval decide (3 ∈ exampleMap) -- true
+#eval exampleMap.size -- 2
 
 example (m : Map Nat String) (k q : Nat) (v : String) :
     (m.insert k v).contains q = ((q == k) || m.contains q) := by
@@ -32,7 +34,7 @@ example (m : Map Nat String) (k : Nat) (v w : String) :
 ```
 
 The API supports `∅`, `{}`, collection literals such as `{(1, "one")}`,
-`insert`, `ofList`, `contains`, decidable `∈`, and structural `MapsTo`. Insertion
+`insert`, `ofList`, `contains`, `size`, `keys`, decidable `∈`, and structural `MapsTo`. Insertion
 and the query correctness theorems use `[LawfulBEq α]` in addition to `[BEq α]`
 and `[Hashable α]`; values need neither `Inhabited` nor `BEq`. Membership and
 bindings are defined structurally, independently of the query algorithm.
@@ -41,17 +43,21 @@ Activate the map simplification rules with `open scoped HAMTVerify.Map`.
 `m.toRaw` explicitly exports the native representation. Importing a native map
 with `Map.ofRaw raw hvalid hunique` requires proofs of **both** invariants;
 an arbitrary map built by upstream's opaque insertion cannot be imported without
-them. The lower-level operations and their weaker assumptions remain available
+them. Importing counts the keys, in time and memory linear in the size of the map. The lower-level operations and their weaker assumptions remain available
 for raw-map proofs. The wrapper exposes the currently verified operations;
 value lookup and deletion are still outside the verified API.
 
-The proof fields are erased and the wrapper has a single runtime data field.
-On Lean 4.32.0, the paired Nat insertion and lookup entry points in `HAMTVerifyTests/Map.lean`
-compile to identical IR signatures and bodies, including ownership annotations,
-and call the same specialized functions in generated C. `HAMTVerifyTests/MapIR.lean`
-checks this as part of `lake test`. Thus this compiler check finds no extra
-wrapper allocation or proof computation for those entry points; it is not a
-universal wall-clock performance theorem. Reproduce the IR check with:
+The proof fields are erased; at runtime the wrapper holds the native map and its
+size. Since only a new key increases the size, insertion looks the key up first;
+the lookup only borrows the native map, which the insertion can then still update
+in place. On Lean 4.32.0, the paired Nat insertion and lookup entry points in
+`HAMTVerifyTests/Map.lean` compile to the same IR signatures and bodies, including
+ownership annotations, as hand-written functions on a structure holding just the
+native map and the size, and call the same specialized functions in generated C.
+`HAMTVerifyTests/MapIR.lean` checks this as part of `lake test`, ignoring declaration
+and constructor names. Thus this compiler check finds no proof computation and no
+work beyond maintaining the size for those entry points; it is not a universal
+wall-clock performance theorem. Reproduce the IR check with:
 
 ```sh
 lake test
@@ -63,7 +69,7 @@ lake env lean HAMTVerifyTests/MapIR.lean
 `HAMTVerify.Set α` wraps `HAMTVerify.Map α Unit`, matching the design of
 [Lean's `PersistentHashSet`](https://lean-lang.org/doc/api/Lean/Data/PersistentHashSet.html#Lean.PersistentHashSet),
 whose `set` field is a `PersistentHashMap α Unit`. The underlying map carries
-`Valid` and `Unique`, so set construction and insertion maintain both proofs
+`Valid`, `Unique`, and the size, so set construction and insertion maintain them
 automatically.
 
 ```lean
@@ -76,6 +82,7 @@ def exampleSet : Set Nat := Set.ofList [7, 3, 7]
 #eval exampleSet.contains 7 -- true
 #eval decide (9 ∈ exampleSet) -- false
 #eval ({1, 2, 1} : Set Nat).contains 2 -- true
+#eval exampleSet.size -- 2
 
 example (s : Set Nat) (k q : Nat) :
     q ∈ s.insert k ↔ q = k ∨ q ∈ s := by
@@ -87,7 +94,7 @@ example (xs : List Nat) (k : Nat) :
 ```
 
 The interface provides `∅`, `{}`, singleton and insertion notation, `insert`,
-`ofList`, `contains`, and decidable structural membership. Its simplification
+`ofList`, `contains`, `size`, `toList`, and decidable structural membership. Its simplification
 lemmas use `@[scoped simp]`: activate them with `open scoped HAMTVerify.Set`.
 As for maps, insertion and the query correctness theorems require
 `[LawfulBEq α]` alongside `[BEq α]` and `[Hashable α]`.
@@ -95,7 +102,9 @@ As for maps, insertion and the query correctness theorems require
 `Set.contains_eq_true_iff` connects the query to structural membership;
 `Set.mem_insert_iff` and `Set.mem_ofList` characterize the elements after
 insertion and bulk construction. `Set.contains_ofList` also proves agreement
-with `List.contains`. These theorems have no explicit invariant premises.
+with `List.contains`. `Set.size_insert` gives the size after insertion, and
+`Set.mem_toList`, `Set.nodup_toList`, and `Set.length_toList` show that `size` is
+the number of elements. These theorems have no explicit invariant premises.
 
 Use `s.toMap` / `Set.ofMap` to move between verified sets and unit-valued maps.
 Use `s.toRaw` / `Set.ofRaw raw hvalid hunique` for the native
@@ -105,9 +114,10 @@ Set operations delegate to the verified map operations. The native set's
 opaque insertion and query are used only as runtime test oracles.
 
 `HAMTVerifyTests/SetIR.lean` compares bundled Nat insertion/query entry points against
-the verified map operations on native set representations. Their compiled IR
-signatures and bodies are identical after ignoring declaration names, including
-ownership annotations. This check is part of `lake test`; it does not assert
+hand-written functions calling the verified map operations on the set's runtime
+data, the native map and its size. Their compiled IR signatures and bodies are
+identical after ignoring declaration and constructor names, including ownership
+annotations. This check is part of `lake test`; it does not assert
 formal equivalence with upstream partial constants or a universal timing bound.
 
 ## Raw-map membership theorem
@@ -199,6 +209,16 @@ apply to the optimized `insert` through these kernel-checked equalities.
 No `implemented_by`, custom axiom, or equality with upstream partial constants
 is introduced by this optimization.
 
+## Key count
+
+`HAMTVerify.keyList` lists the keys stored in a node structurally, and
+`HAMTVerify.keyCount` is its length. Under `Valid` and `Unique` the list contains
+exactly the stored keys (`mem_keyList`) without duplicates (`nodup_keyList`), so
+`keyCount` is the number of distinct keys: routing separates the keys of different
+slots, and uniqueness those of a collision node. `keyCount_insert` shows that
+insertion adds one exactly when the key is new. The bundled map caches this count,
+with the invariant `size = keyCount toRaw.root`; `Map.keys` exposes the list.
+
 ## Relationship to Lean's implementation
 
 The total functions in `HAMTVerify/Contains.lean` use Lean's existing `Node` and
@@ -257,13 +277,13 @@ additional axioms, or `native_decide`.
 
 The bundled API suite checks client proofs without explicit invariants,
 collection notation, membership decisions, imports with supplied proofs, bulk
-construction with duplicate keys, collision promotion, overwrites, and retained
-snapshots. Its compiler check compares the bundled and raw entry points after
-proof erasure and inlining.
+construction with duplicate keys, collision promotion, overwrites, sizes, and
+retained snapshots. Its compiler check compares the bundled entry points with
+hand-written ones on the native map and its size, after proof erasure and inlining.
 
 The set suite checks **80,288** query cases against upstream and a list model,
 including default, shared-prefix, constant, and Name hashing, duplicate
-insertions, retained snapshots, list construction, and native-set imports.
+insertions, sizes, retained snapshots, list construction, and native-set imports.
 Client proofs exercise `open scoped HAMTVerify.Set`, membership notation, and
 the invariant-free operation laws; the set entry points also have an IR check.
 
@@ -280,13 +300,14 @@ machine to evaluate performance with its hardware and toolchain.
 - `HAMTVerify/Bindings.lean`: structural key/value membership and uniqueness.
 - `HAMTVerify/Insert.lean`: total insertion, collision updates, and bucket promotion.
 - `HAMTVerify/InsertCachedProofs.lean`: equality of cached-hash insertion and the total proof model.
-- `HAMTVerify/Map.lean`: bundled map type, invariant-preserving API, and laws without invariant premises.
+- `HAMTVerify/Size.lean`: structural key list and count, and their meaning under the invariants.
+- `HAMTVerify/Map.lean`: bundled map type with its size, invariant-preserving API, and laws without invariant premises.
 - `HAMTVerify/Set.lean`: verified set interface backed by `Map α Unit` and scoped membership laws.
 - `HAMTVerify/InsertProofs.lean`: insertion invariants, membership and value-update proofs.
 - `HAMTVerifyTests/Contains.lean`: proof examples, axiom checks, and executable comparisons.
 - `HAMTVerifyTests/Insert.lean`: insertion proof examples, axiom checks, and regression tests.
 - `HAMTVerifyTests/Map.lean`: bundled API examples, axiom checks, and executable regressions.
-- `HAMTVerifyTests/MapIR.lean`: compiler check that the bundled API adds no overhead to the tested entry points.
+- `HAMTVerifyTests/MapIR.lean`: compiler check that the tested bundled entry points compile like hand-written code on the native map and its size.
 - `HAMTVerifyTests/Set.lean`: set API proofs, axiom checks, and regression tests.
-- `HAMTVerifyTests/SetIR.lean`: compiler check for erasure of the set and map wrappers.
+- `HAMTVerifyTests/SetIR.lean`: compiler check for erasure of the set and map wrappers' proofs.
 - [Benchmarks/](Benchmarks/README.md): benchmark workloads, runner, and compiler inspection.

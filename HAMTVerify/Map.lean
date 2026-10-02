@@ -1,20 +1,21 @@
 module
 
-public import HAMTVerify.InsertProofs
+public import HAMTVerify.Size
 import all Lean.Data.PersistentHashMap
 
 @[expose] public section
 
 /-!
-A persistent map with bundled routing and uniqueness invariants, analogous to
-the invariant-carrying `Std.TreeMap` API. The native representation and the
-unbundled theorems remain available for reasoning about arbitrary raw nodes.
+A persistent map with bundled routing and uniqueness invariants and its number of
+keys, analogous to the invariant-carrying `Std.TreeMap` API. The native representation
+and the unbundled theorems remain available for reasoning about arbitrary raw nodes.
 -/
 
 namespace HAMTVerify
 
-/-- A native HAMT together with the invariants needed by the verified operations.
-The proof fields are erased at runtime. Use `∅`, `insert`, and `ofList` to build
+/-- A native HAMT together with the invariants needed by the verified operations and
+its number of keys, which the native map does not store. The proof fields are erased
+at runtime; the native map and the size remain. Use `∅`, `insert`, and `ofList` to build
 maps, or `ofRaw` when proofs for an existing native map are available. -/
 structure Map (α : Type u) (β : Type v) [BEq α] [Hashable α] where
   /-- Explicit access to the native representation. -/
@@ -23,15 +24,20 @@ structure Map (α : Type u) (β : Type v) [BEq α] [Hashable α] where
   valid : Valid toRaw
   /-- Keys are unique, so overwriting has the usual map semantics. -/
   unique : Unique toRaw.root
+  /-- The number of keys. -/
+  size : Nat
+  /-- `size` counts the keys stored in the native tree. -/
+  size_eq : size = keyCount toRaw.root
 
 namespace Map
 
 variable {α : Type u} {β : Type v} [BEq α] [Hashable α]
 
-/-- Bundle an existing native map with proofs of both invariants. -/
+/-- Bundle an existing native map with proofs of both invariants. Its keys are counted,
+in time and memory linear in the size of the map. -/
 @[inline] def ofRaw (raw : Lean.PersistentHashMap α β)
     (valid : Valid raw) (unique : Unique raw.root) : Map α β :=
-  ⟨raw, valid, unique⟩
+  ⟨raw, valid, unique, keyCount raw.root, rfl⟩
 
 /-- `unique_empty`, stated for the root of the native empty map: the body of `empty` below
 is exposed, so it cannot unfold the unexposed `Lean.PersistentHashMap.empty` itself. -/
@@ -40,16 +46,21 @@ theorem unique_empty_root : Unique (Lean.PersistentHashMap.empty : Lean.Persiste
 
 /-- The empty map; also written `∅` or `{}`. -/
 @[inline] def empty : Map α β :=
-  ⟨Lean.PersistentHashMap.empty, valid_empty, unique_empty_root⟩
+  ⟨Lean.PersistentHashMap.empty, valid_empty, unique_empty_root, 0, keyCount_empty_root.symm⟩
 
 instance : EmptyCollection (Map α β) := ⟨empty⟩
 instance : Inhabited (Map α β) := ⟨∅⟩
 
-/-- Verified insertion, carrying both preservation proofs automatically. -/
+/-- Verified insertion, carrying the preservation proofs automatically. Only a new key
+increases the size, so insertion first looks the key up. -/
 @[inline] def insert [LawfulBEq α] (map : Map α β) (key : α) (value : β) : Map α β :=
+  -- Compute the size first: the lookup borrows the native map, which the insertion can
+  -- then still update in place.
+  let size := if HAMTVerify.contains map.toRaw key then map.size else map.size + 1
   ⟨HAMTVerify.insert map.toRaw key value,
     valid_insert map.toRaw map.valid key value,
-    unique_insert map.toRaw map.valid map.unique key value⟩
+    unique_insert map.toRaw map.valid map.unique key value,
+    size, by rw [keyCount_insert map.toRaw map.valid map.unique, ← map.size_eq]⟩
 
 instance [LawfulBEq α] : Singleton (α × β) (Map α β) :=
   ⟨fun kv => (∅ : Map α β).insert kv.1 kv.2⟩
@@ -74,12 +85,21 @@ instance : Membership α (Map α β) := ⟨fun map key => HAMTVerify.Mem key map
 def MapsTo (map : Map α β) (key : α) (value : β) : Prop :=
   HAMTVerify.MapsTo key value map.toRaw
 
+/-- The keys, in the order of the native tree. -/
+def keys (map : Map α β) : List α := keyList map.toRaw.root
+
 @[scoped simp] theorem toRaw_ofRaw (raw : Lean.PersistentHashMap α β)
     (valid : Valid raw) (unique : Unique raw.root) :
     (ofRaw raw valid unique).toRaw = raw := rfl
 
 @[scoped simp] theorem ofRaw_toRaw (map : Map α β) :
-    ofRaw map.toRaw map.valid map.unique = map := rfl
+    ofRaw map.toRaw map.valid map.unique = map := by
+  cases map with
+  | mk raw valid unique size size_eq => subst size_eq; rfl
+
+@[scoped simp] theorem size_ofRaw (raw : Lean.PersistentHashMap α β)
+    (valid : Valid raw) (unique : Unique raw.root) :
+    (ofRaw raw valid unique).size = keyCount raw.root := rfl
 
 @[scoped simp] theorem toRaw_empty : (∅ : Map α β).toRaw = Lean.PersistentHashMap.empty := rfl
 
@@ -98,6 +118,16 @@ theorem contains_eq_false_iff [LawfulBEq α] (map : Map α β) (key : α) :
 instance [LawfulBEq α] (map : Map α β) (key : α) : Decidable (key ∈ map) :=
   decidable_of_iff (map.contains key = true) (contains_eq_true_iff map key)
 
+theorem mem_keys (map : Map α β) (key : α) : key ∈ map.keys ↔ key ∈ map :=
+  mem_keyList map.valid key
+
+theorem nodup_keys (map : Map α β) : map.keys.Nodup :=
+  nodup_keyList map.valid map.unique
+
+/-- `size` is the number of keys. -/
+theorem length_keys (map : Map α β) : map.keys.length = map.size :=
+  map.size_eq.symm
+
 theorem mem_iff_exists_mapsTo (map : Map α β) (key : α) :
     key ∈ map ↔ ∃ value, map.MapsTo key value :=
   hasKey_iff_exists_binding
@@ -115,6 +145,15 @@ theorem MapsTo.functional {map : Map α β} {key : α} {v w : β}
 
 @[scoped simp] theorem contains_empty [LawfulBEq α] (key : α) :
     (∅ : Map α β).contains key = false := HAMTVerify.contains_empty key
+
+@[scoped simp] theorem size_empty : (∅ : Map α β).size = 0 := rfl
+
+theorem size_insert [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
+    (map.insert key value).size = if key ∈ map then map.size else map.size + 1 := by
+  change (if map.contains key then map.size else map.size + 1) = _
+  by_cases h : key ∈ map
+  · rw [if_pos ((contains_eq_true_iff map key).mpr h), if_pos h]
+  · rw [if_neg (mt (contains_eq_true_iff map key).mp h), if_neg h]
 
 @[scoped simp] theorem contains_insert [LawfulBEq α] (map : Map α β) (key q : α) (value : β) :
     (map.insert key value).contains q = ((q == key) || map.contains q) :=
