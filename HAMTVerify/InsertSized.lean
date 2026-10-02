@@ -1,6 +1,6 @@
 module
 
-public import HAMTVerify.InsertCachedProofs
+public import HAMTVerify.Insert
 import all Init.Data.Array.Basic
 import all Lean.Data.PersistentHashMap
 
@@ -9,8 +9,8 @@ import all Lean.Data.PersistentHashMap
 /-!
 Insertion with a cached count, following the tree-map pattern of returning the
 updated runtime data together with its size. The native HAMT has no subtree-size
-fields, so a single `SizedRaw` container carries the total count down the route
-and is reused while reconstructing the parents. Proofs are separate and erased.
+fields, so `SizedRaw` carries the total count down the route and back through
+the reconstructed parents. Proofs are separate and erased.
 -/
 
 namespace HAMTVerify
@@ -20,51 +20,56 @@ open Lean.PersistentHashMap
 variable {α : Type u} {β : Type v}
 
 /-- Runtime data shared by the insertion traversal and the bundled map. During
-descent `size` is the whole map's count, not the current child's count. Keeping
-both fields in one consumed container allows the compiler to reuse it throughout
-the traversal, instead of allocating a membership result at each level. -/
+descent `size` is the whole map's count, not the current child's count. The
+traversal returns this count together with the updated node, without returning
+a separate membership result at each level. -/
 structure SizedRaw (α : Type u) (β : Type v) [BEq α] [Hashable α] where
   /-- The native map, or the child currently being updated during insertion. -/
   toRaw : Lean.PersistentHashMap α β
   /-- The total map size. `Map` additionally proves that this counts its keys. -/
   size : Nat
 
+/-- Update one slot, threading the total map size through the child callback. -/
+@[inline] def insertSizedEntries [BEq α] [Hashable α]
+    (es : Array (Entry α β (Node α β))) (size : Nat)
+    (childInsert : (child : Node α β) → .ref child ∈ es →
+      Nat → USize → α → β → SizedRaw α β)
+    (h : USize) (key : α) (value : β) : SizedRaw α β :=
+  -- NOTE: The pure modifier returns only the array, so the outer match keeps
+  -- the updated size. In the ref case recursion finishes before replacement;
+  -- the original slot still holds the child during that recursive call.
+  if hi : slot h < es.size then
+    let (entry, size) := match he : es[slot h] with
+      | .null => (.entry key value, size + 1)
+      | .entry k v =>
+        if key == k then (.entry key value, size)
+        else (.ref (mkCollisionNode k v key value), size + 1)
+      | .ref child =>
+        let result := childInsert child (he ▸ Array.getElem_mem hi) size (nextHash h) key value
+        (.ref result.toRaw.root, result.size)
+    ⟨⟨.entries (Array.modifyInBoundWithCallBackProof es (slot h) (fun _ _ => entry) hi)⟩, size⟩
+  -- The reference lookup returns false for an invalid slot; preserve its
+  -- size specification even though the entries array is left unchanged.
+  else ⟨⟨.entries es⟩, size + 1⟩
+
 /-- Update the count at the insertion site, continuing through existing nodes
-even after the promotion limit. Reconstruct each parent directly in its branch
-so the compiler can reuse both its constructor and the size container. -/
+even after the promotion limit. The entries helper reconstructs the parent
+and passes back the count returned by the child. -/
 def insertSizedNoExpand [BEq α] [Hashable α] (s : SizedRaw α β) (h : USize)
     (key : α) (value : β) : SizedRaw α β :=
   let ⟨⟨node⟩, size⟩ := s
   match node with
   | .collision keys vals hsz =>
     let oldSize := keys.size
-    let b := insertCollision ⟨.collision keys vals hsz, .mk ..⟩ 0 key value
+    let b := insertCollisionAux ⟨.collision keys vals hsz, .mk ..⟩ 0 key value
     let size := if getCollisionNodeSize b == oldSize then size else size + 1
     ⟨⟨b.val⟩, size⟩
   | .entries es =>
-    let i := slot h
-    if hi : i < es.size then
-      let old := es[i]
-      let es' := es.set i .null
-      match he : old with
-      | .null => ⟨⟨.entries (es'.set i (.entry key value) (by simpa [es'] using hi))⟩, size + 1⟩
-      | .entry k v =>
-        if key == k then
-          ⟨⟨.entries (es'.set i (.entry key value) (by simpa [es'] using hi))⟩, size⟩
-        else
-          ⟨⟨.entries (es'.set i (.ref (mkCollisionNode k v key value))
-            (by simpa [es'] using hi))⟩, size + 1⟩
-      | .ref child =>
-        let result := insertSizedNoExpand ⟨⟨child⟩, size⟩ (nextHash h) key value
-        ⟨⟨.entries (es'.set i (.ref result.toRaw.root) (by simpa [es'] using hi))⟩, result.size⟩
-    -- Match the membership-based specification on malformed short arrays too.
-    -- Bundled maps rule this case out through their routing invariant.
-    else ⟨⟨.entries es⟩, size + 1⟩
+    insertSizedEntries es size (fun child _ size =>
+      insertSizedNoExpand ⟨⟨child⟩, size⟩) h key value
 termination_by sizeOf s.toRaw.root
 decreasing_by
-  have hs := Array.sizeOf_get es i hi
-  change es[i] = .ref child at he
-  rw [he] at hs
+  have hs := Array.sizeOf_lt_of_mem ‹_›
   simp at hs ⊢
   omega
 
@@ -79,57 +84,74 @@ def insertSizedRaw [BEq α] [Hashable α] (levels : Nat) (offset : USize)
     let ⟨⟨node⟩, size⟩ := s
     match node with
     | .entries es =>
-      let i := slot h
-      if hi : i < es.size then
-        let old := es[i]
-        let es' := es.set i .null
-        match old with
-        | .null => ⟨⟨.entries (es'.set i (.entry key value) (by simpa [es'] using hi))⟩, size + 1⟩
-        | .entry k v =>
-          if key == k then
-            ⟨⟨.entries (es'.set i (.entry key value) (by simpa [es'] using hi))⟩, size⟩
-          else
-            ⟨⟨.entries (es'.set i (.ref (mkCollisionNode k v key value))
-              (by simpa [es'] using hi))⟩, size + 1⟩
-        | .ref child =>
-          let result := insertSizedRaw levels (offset + shift) ⟨⟨child⟩, size⟩
-            (nextHash h) key value
-          ⟨⟨.entries (es'.set i (.ref result.toRaw.root) (by simpa [es'] using hi))⟩, result.size⟩
-      else ⟨⟨.entries es⟩, size + 1⟩
+      insertSizedEntries es size (fun child _ size =>
+        insertSizedRaw levels (offset + shift) ⟨⟨child⟩, size⟩) h key value
     | .collision keys vals hsz =>
       let oldSize := keys.size
-      let b := insertCollision ⟨.collision keys vals hsz, .mk ..⟩ 0 key value
+      let b := insertCollision keys vals hsz key value
       let size := if getCollisionNodeSize b == oldSize then size else size + 1
-      match b with
-      | ⟨.collision keys vals hsz, _⟩ =>
-        if keys.size < maxCollisions then ⟨⟨b.val⟩, size⟩
-        else ⟨⟨.entries (rebuildCached (insertNodeCached levels (offset + shift))
-          offset ⟨keys, vals, hsz⟩ 0 mkEmptyEntriesArray)⟩, size⟩
-      | ⟨.entries _, h⟩ => nomatch h
+      if getCollisionNodeSize b < maxCollisions then ⟨⟨b.val⟩, size⟩
+      else ⟨⟨.entries (rebuild (insertNode levels (offset + shift))
+        offset b 0 mkEmptyEntriesArray)⟩, size⟩
 
 /-- Executable insertion with a size accumulator. -/
 @[inline] def insertSizedImpl [BEq α] [Hashable α] (s : SizedRaw α β)
     (key : α) (value : β) : SizedRaw α β :=
   insertSizedRaw (maxDepth.toNat - 1) 0 s (hash key).toUSize key value
 
-theorem insertAt_size [BEq α] (b : Bucket α β) (i : Nat) (key : α) (value : β) :
-    (insertAt b i key value).keys.size =
-      if containsAt b.keys i key then b.keys.size else b.keys.size + 1 := by
-  rw [insertAt, containsAt]
+-- FIXME: A bit too long
+theorem insertCollisionAux_size [BEq α] (keys : Array α) (vals : Array β)
+    (hsz : keys.size = vals.size) (i : Nat) (key : α) (value : β) :
+    getCollisionNodeSize (insertCollisionAux ⟨.collision keys vals hsz, .mk ..⟩ i key value) =
+      if (keys.drop i).contains key then keys.size else keys.size + 1 := by
+  rw [insertCollisionAux.eq_def]
+  dsimp only
   split
-  · split
-    · simp
-    · exact insertAt_size b (i + 1) key value
-  · simp
-termination_by b.keys.size - i
+  · rename_i hi
+    have step : (keys.drop i).contains key =
+        ((key == keys[i]) || (keys.drop (i + 1)).contains key) := by
+      have contains_drop (j : Nat) :
+          (keys.drop j).contains key = (keys.toList.drop j).contains key := by
+        simpa only [List.toArray_drop, Array.toArray_toList] using
+          (List.contains_toArray (l := keys.toList.drop j) (a := key))
+      simp only [contains_drop]
+      have hs := congrArg (fun xs : List α => xs.contains key)
+        (List.drop_eq_getElem_cons (l := keys.toList) (i := i) (by simpa using hi))
+      simp only [List.contains_cons] at hs
+      rw [Array.getElem_toList] at hs
+      exact hs
+    rw [step]
+    split
+    · simp_all [getCollisionNodeSize]
+    · rename_i hk
+      simpa [hk] using insertCollisionAux_size keys vals hsz (i + 1) key value
+  · rename_i hi
+    simp [getCollisionNodeSize, Array.extract_empty_of_size_le_start (by omega : keys.size ≤ i)]
+termination_by keys.size - i
 
 @[scoped simp] theorem insertCollision_size_eq [BEq α] (keys : Array α) (vals : Array β)
     (hsz : keys.size = vals.size) (key : α) (value : β) :
-    (getCollisionNodeSize (insertCollision ⟨.collision keys vals hsz, .mk ..⟩ 0 key value)
-      == keys.size) = containsAt keys 0 key := by
-  rw [insertCollision_eq ⟨keys, vals, hsz⟩]
-  simp only [Bucket.node, getCollisionNodeSize, insertAt_size]
-  cases containsAt keys 0 key <;> simp
+    (getCollisionNodeSize (insertCollision keys vals hsz key value) == keys.size) = keys.contains key := by
+  rw [insertCollision, insertCollisionAux_size]
+  simp only [Array.drop_eq_extract, Array.extract_size]
+  cases keys.contains key <;> simp
+
+theorem insertSizedEntries_eq [BEq α] [Hashable α]
+    (es : Array (Entry α β (Node α β))) (size : Nat)
+    (childInsert : (child : Node α β) → .ref child ∈ es →
+      Nat → USize → α → β → SizedRaw α β)
+    (childModel : (child : Node α β) → .ref child ∈ es → USize → α → β → Node α β)
+    (h : USize) (key : α) (value : β)
+    (childSpec : ∀ child hmem,
+      childInsert child hmem size (nextHash h) key value =
+        ⟨⟨childModel child hmem (nextHash h) key value⟩,
+          if containsNode child (nextHash h) key then size else size + 1⟩) :
+    insertSizedEntries es size childInsert h key value =
+      ⟨⟨.entries (insertEntries es childModel h key value)⟩,
+        if containsNode (.entries es) h key then size else size + 1⟩ := by
+  simp only [insertSizedEntries, insertEntries, Array.modifyWithCallBackProof,
+    Array.modifyInBoundWithCallBackProof, containsNode_entries]
+  split <;> grind
 
 theorem insertSizedNoExpand_eq [BEq α] [Hashable α] (s : SizedRaw α β) (h : USize)
     (key : α) (value : β) :
@@ -139,29 +161,23 @@ theorem insertSizedNoExpand_eq [BEq α] [Hashable α] (s : SizedRaw α β) (h : 
   obtain ⟨⟨node⟩, size⟩ := s
   cases node with
   | collision keys vals hsz =>
-    simp only [insertSizedNoExpand, insertNoExpand, containsNode, insertCollision_size_eq]
+    simp only [insertSizedNoExpand.eq_def, insertNoExpand.eq_def, containsNode,
+      ← insertCollision.eq_def, insertCollision_size_eq]
   | entries es =>
-    rw [insertSizedNoExpand, containsNode_entries, insertNoExpand]
-    split
-    · rename_i hi
-      cases he : es[slot h] with
-      | null => simp
-      | entry k v => cases hk : key == k <;> simp [hk]
-      | ref child =>
-        dsimp only
-        rw [insertSizedNoExpand_eq ⟨⟨child⟩, size⟩ (nextHash h) key value]
-    · rfl
+    rw [insertSizedNoExpand.eq_def, insertNoExpand.eq_def]
+    apply insertSizedEntries_eq
+    intro child hmem
+    exact insertSizedNoExpand_eq ⟨⟨child⟩, size⟩ (nextHash h) key value
 termination_by sizeOf s.toRaw.root
 decreasing_by
-  have hs := Array.sizeOf_get es (slot h) (by assumption)
-  rw [he] at hs
+  have hs := Array.sizeOf_lt_of_mem hmem
   simp at hs ⊢
   omega
 
 theorem insertSizedRaw_eq [BEq α] [Hashable α] (levels : Nat) (offset : USize)
     (s : SizedRaw α β) (h : USize) (key : α) (value : β) :
     insertSizedRaw levels offset s h key value =
-      ⟨⟨insertNodeCached levels offset s.toRaw.root h key value⟩,
+      ⟨⟨insertNode levels offset s.toRaw.root h key value⟩,
         if containsNode s.toRaw.root h key then s.size else s.size + 1⟩ := by
   induction levels generalizing offset s h key value with
   | zero => exact insertSizedNoExpand_eq s h key value
@@ -169,21 +185,12 @@ theorem insertSizedRaw_eq [BEq α] [Hashable α] (levels : Nat) (offset : USize)
     obtain ⟨⟨node⟩, size⟩ := s
     cases node with
     | entries es =>
-      simp only [insertSizedRaw, insertNodeCached, insertEntriesCached,
-        Array.modify, Array.modifyM, containsNode_entries]
-      split
-      · rename_i hi
-        cases he : es[slot h] with
-        | null => simp
-        | entry k v => cases hk : key == k <;> simp [hk]
-        | ref child => simp [ih]
-      · rfl
+      simp only [insertSizedRaw, insertNode]
+      apply insertSizedEntries_eq
+      intro child hmem
+      exact ih (offset + shift) ⟨⟨child⟩, size⟩ (nextHash h) key value
     | collision keys vals hsz =>
-      simp only [insertSizedRaw, insertNodeCached, containsNode, insertCollision_size_eq]
-      generalize insertCollision ⟨Node.collision keys vals hsz, IsCollisionNode.mk ..⟩ 0 key value = b
-      obtain ⟨b, hb⟩ := b
-      cases hb
-      dsimp only
+      simp only [insertSizedRaw, insertNode, containsNode, insertCollision_size_eq]
       split <;> rfl
 
 /-- A simple specification preserving the bundled API's definitional equalities.

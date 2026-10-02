@@ -19,8 +19,13 @@ example [BEq α] [LawfulBEq α] [Hashable α] (k : α) (v₁ v₂ w : β) :
   · exact unique_insert _ valid_empty unique_empty _ _
 
 example [BEq α] [LawfulBEq α] [Hashable α] (bindings : List (α × β)) :
-    Valid (bindings.foldl (fun m kv => insert m kv.1 kv.2) Lean.PersistentHashMap.empty) :=
-  (insert_fold_valid_unique bindings).1
+    Valid (bindings.foldl (fun m kv => insert m kv.1 kv.2) Lean.PersistentHashMap.empty) := by
+  have preserve (map : Lean.PersistentHashMap α β) (wf : Valid map) :
+      Valid (bindings.foldl (fun m kv => insert m kv.1 kv.2) map) := by
+    induction bindings generalizing map with
+    | nil => exact wf
+    | cons kv xs ih => exact ih _ (valid_insert map wf _ _)
+  exact preserve _ valid_empty
 
 -- Valid alone permits duplicate keys; the update law states its extra premise.
 private def duplicates : Node Nat Nat := .collision #[2, 2] #[20, 21] rfl
@@ -34,22 +39,22 @@ example : ¬ Unique duplicates := by
 
 -- An empty or too-short entries array is left unchanged, as by upstream modify.
 -- The successful insertion guarantees require Valid and cannot cover this node.
-example : insertNode 6 (fun _ : Nat => 0) (.entries #[]) 7 70 = .entries #[] := by
-  simp [insertNode, insertEntries]
+example : insertNode 6 0 (.entries #[] : Node Nat Nat) 0 7 70 = .entries #[] := by
+  simp [insertNode, insertEntries, Array.modifyWithCallBackProof]
 
 -- Neither a depth-limit collision nor the key/value arrays require Inhabited β.
 example [BEq α] [LawfulBEq α] (k : α) (v : β) (hashAt : α → USize) :
     Updated (Node.collision (#[] : Array α) (#[] : Array β) rfl)
-      (insertNode 0 hashAt (.collision (#[] : Array α) (#[] : Array β) rfl) k v) k v := by
-  apply (insertNode_unique_updated 0 hashAt _ (.collision _ _ _ _) _ k v).2
+      (insertNoExpand (.collision (#[] : Array α) (#[] : Array β) rfl) (hashAt k) k v) k v := by
+  apply (insertNoExpand_unique_updated (.collision hashAt _ _ _) _ k v).2
   exact .collision (by intro i hi; simp at hi)
 
 /-- info: 'HAMTVerify.valid_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.valid_insert
-/-- info: 'HAMTVerify.insertNodeCached_eq' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'HAMTVerify.insertNode_wf_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms HAMTVerify.insertNodeCached_eq
+#print axioms HAMTVerify.insertNode_wf_mem
 /-- info: 'HAMTVerify.containsThenInsert_eq_impl' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.containsThenInsert_eq_impl
@@ -68,9 +73,9 @@ example [BEq α] [LawfulBEq α] (k : α) (v : β) (hashAt : α → USize) :
 /-- info: 'HAMTVerify.contains_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.contains_insert
-/-- info: 'HAMTVerify.insert_fold_valid_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'HAMTVerify.keyCount_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms HAMTVerify.insert_fold_valid_unique
+#print axioms HAMTVerify.keyCount_insert
 
 -- Compare the complete representation as well as observational behavior.
 -- This partial test oracle is deliberately outside the verified implementation.

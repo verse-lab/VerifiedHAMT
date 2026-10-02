@@ -10,161 +10,155 @@ import all Lean.Data.PersistentHashMap
 
 namespace HAMTVerify
 
+namespace Array
+
+@[inline]
+unsafe def modifyInBoundWithCallBackProofUnsafe (xs : Array α) (i : Nat) (f : (x : α) → x ∈ xs → α) (h_lt : i < xs.size) : Array α :=
+  let v                := xs[i]'h_lt
+  -- Replace a[i] by `box(0)`.  This ensures that `v` remains unshared if possible.
+  -- Note: we assume that arrays have a uniform representation irrespective
+  -- of the element type, and that it is valid to store `box(0)` in any array.
+  let xs'               := xs.set i (unsafeCast ()) h_lt
+  let v := f v (Array.getElem_mem h_lt)
+  xs'.set i v (Nat.lt_of_lt_of_eq h_lt (Array.size_set ..).symm)
+
+-- NOTE: Native `Array.modify` gives its callback only a value, without proof
+-- that it came from the array. The extra membership argument lets recursive
+-- callers prove that a selected child is smaller; it is erased at runtime.
+@[implemented_by modifyInBoundWithCallBackProofUnsafe]
+def modifyInBoundWithCallBackProof (xs : Array α) (i : Nat) (f : (x : α) → x ∈ xs → α) (h_lt : i < xs.size) : Array α :=
+  let v := xs[i]'h_lt
+  xs.set i (f v (Array.getElem_mem h_lt)) h_lt
+
+@[inline]
+def modifyWithCallBackProof (xs : Array α) (i : Nat) (f : (x : α) → x ∈ xs → α) : Array α :=
+  if h_lt : i < xs.size then modifyInBoundWithCallBackProof xs i f h_lt else xs
+
+theorem size_modifyInBoundWithCallBackProof {xs : Array α} {i : Nat} {f : (x : α) → x ∈ xs → α} {h_lt : i < xs.size} :
+  (modifyInBoundWithCallBackProof xs i f h_lt).size = xs.size := by
+  simp only [modifyInBoundWithCallBackProof, Array.size_set]
+
+theorem size_modifyWithCallBackProof {xs : Array α} {i : Nat} {f : (x : α) → x ∈ xs → α} :
+  (modifyWithCallBackProof xs i f).size = xs.size := by
+  simp only [modifyWithCallBackProof]
+  split ; apply size_modifyInBoundWithCallBackProof ; rfl
+
+end Array
+
 open Lean.PersistentHashMap
 
 variable {α : Type u} {β : Type v}
 
-/-- The parallel arrays of a native collision node. -/
-structure Bucket (α : Type u) (β : Type v) where
-  keys : Array α
-  vals : Array β
-  size_eq : keys.size = vals.size
-
-@[inline] def Bucket.node (b : Bucket α β) : Node α β := .collision b.keys b.vals b.size_eq
-
-/-- Replace the first matching binding, or append when the scan reaches the end. -/
-def insertAt [BEq α] (b : Bucket α β) (i : Nat) (key : α) (value : β) : Bucket α β :=
-  if hi : i < b.keys.size then
-    if key == b.keys[i] then
-      ⟨b.keys.set i key, b.vals.set i value (b.size_eq ▸ hi), by simp [b.size_eq]⟩
-    else insertAt b (i + 1) key value
-  else
-    ⟨b.keys.push key, b.vals.push value, by simp [b.size_eq]⟩
-termination_by b.keys.size - i
-
-/-- Scan directly in a collision node so its constructor can be reused. The
-subtype proof is erased; no intermediate `Bucket` is allocated per update. -/
-def insertCollision [BEq α] (b : CollisionNode α β) (i : Nat)
+-- Corresponding to `insertAtCollisionNodeAux`
+/-- Replace the first matching binding, or append when the scan reaches the end.
+Scanning the collision node directly allows its constructor to be reused. -/
+def insertCollisionAux [BEq α] (b : CollisionNode α β) (i : Nat)
     (key : α) (value : β) : CollisionNode α β :=
   match b with
   | ⟨.collision keys vals hsz, _⟩ =>
+    -- FIXME: Ideally, should not compare with `key.size` repetitively?
     if hi : i < keys.size then
       if key == keys[i] then
         ⟨.collision (keys.set i key) (vals.set i value (hsz ▸ hi))
           (by simp [hsz]), .mk ..⟩
-      else insertCollision b (i + 1) key value
+      else insertCollisionAux b (i + 1) key value
     else
       ⟨.collision (keys.push key) (vals.push value) (by simp [hsz]), .mk ..⟩
   | ⟨.entries _, h⟩ => nomatch h
 termination_by getCollisionNodeSize b - i
 decreasing_by simp only [getCollisionNodeSize]; omega
 
-/-- One entries-array update, parameterized by insertion into a child. -/
-@[inline] def insertEntries [BEq α]
-    (childInsert : Node α β → α → β → Node α β) (hashAt : α → USize)
-    (es : Array (Entry α β (Node α β))) (key : α) (value : β) :
-    Array (Entry α β (Node α β)) :=
-  es.modify (slot (hashAt key)) fun entry =>
-    match entry with
-      | .null => .entry key value
-      | .entry k v => if key == k then .entry key value
-          else .ref (mkCollisionNode k v key value)
-      | .ref child => .ref (childInsert child key value)
+@[inline] def insertCollision [BEq α] (keys : Array α) (vals : Array β) (hsz : keys.size = vals.size)
+    (key : α) (value : β) : CollisionNode α β :=
+  insertCollisionAux ⟨.collision keys vals hsz, .mk ..⟩ 0 key value
 
+-- The `Node.entries` branch of `insertAux`
+/-- Entries update with an already computed hash. The child callback receives
+proof that the child is referenced by the original entries array. -/
+@[inline] def insertEntries [BEq α]
+    (es : Array (Entry α β (Node α β)))
+    -- NOTE: `insertEntries` handles the current level; `childInsert` handles the next level.
+    -- Only the `.ref` case consumes another hash chunk and invokes the callback.
+    (childInsert : (child : Node α β) → .ref child ∈ es → USize → α → β → Node α β)
+    (h : USize) (key : α) (value : β) :
+    Array (Entry α β (Node α β)) :=
+  Array.modifyWithCallBackProof es (slot h) fun
+    | .null, _ => .entry key value
+    | .entry k v, _ => if key == k then .entry key value
+        else .ref (mkCollisionNode k v key value)
+    | .ref child, hmem => .ref (childInsert child hmem (nextHash h) key value)
+
+-- A special path for insertion below the depth limit
+-- NOTE: The promotion limit does not bound the depth of an existing input tree.
+-- This path still descends that tree, using the callback's membership proof to
+-- decrease `sizeOf node`. The other callers of `insertEntries` ignore that proof:
+-- `insertNode` decreases `levels`, while `rebuild` decreases the unprocessed suffix.
 /-- At the depth limit, continue along existing nodes without promoting buckets. -/
 def insertNoExpand [BEq α] (node : Node α β) (hash : USize)
     (key : α) (value : β) : Node α β :=
   match node with
   | .collision keys vals hsz =>
-    (insertCollision ⟨.collision keys vals hsz, .mk ..⟩ 0 key value).val
+    (insertCollision keys vals hsz key value).val
   | .entries es =>
-    let i := slot hash
-    if hi : i < es.size then
-      let old := es[i]
-      let es' := es.set i .null
-      let entry := match he : old with
-        | .null => .entry key value
-        | .entry k v => if key == k then .entry key value
-            else .ref (mkCollisionNode k v key value)
-        | .ref child => .ref (insertNoExpand child (nextHash hash) key value)
-      .entries (es'.set i entry (by simpa [es'] using hi))
-    else .entries es
+    .entries (insertEntries es (fun child _ => insertNoExpand child) hash key value)
 termination_by sizeOf node
 decreasing_by
-  have h := Array.sizeOf_get es i hi
-  change es[i] = .ref child at he
-  rw [he] at h
+  have h := Array.sizeOf_lt_of_mem ‹_›
   simp at h ⊢
   omega
 
-/-- Reinsert a bucket in its original order into a fresh entries array. -/
-def rebuild [BEq α] (childInsert : Node α β → α → β → Node α β)
-    (hashAt : α → USize) (b : Bucket α β) (i : Nat)
-    (es : Array (Entry α β (Node α β))) : Array (Entry α β (Node α β)) :=
-  if hi : i < b.keys.size then
-    rebuild childInsert hashAt b (i + 1)
-      (insertEntries childInsert hashAt es b.keys[i] (b.vals[i]'(b.size_eq ▸ hi)))
-  else es
-termination_by b.keys.size - i
-
-/-- `levels` counts the remaining levels at which buckets may be promoted.
-The hash function tracks the unconsumed bits and is shifted when descending.
-Rebuilding calls only entries insertion at this level, and node insertion at a
-strictly smaller level, so no unproved fuel exhaustion case is needed. -/
-def insertNode [BEq α] (levels : Nat) (hashAt : α → USize)
-    (node : Node α β) (key : α) (value : β) : Node α β :=
-  match levels with
-  | 0 => insertNoExpand node (hashAt key) key value
-  | levels + 1 =>
-    let childInsert := insertNode levels (fun k => nextHash (hashAt k))
-    match node with
-    | .entries es => .entries (insertEntries childInsert hashAt es key value)
-    | .collision keys vals hsz =>
-      let b := insertAt ⟨keys, vals, hsz⟩ 0 key value
-      if b.keys.size < maxCollisions then b.node
-      else .entries (rebuild childInsert hashAt b 0 mkEmptyEntriesArray)
-
-/-- Entries update with an already computed hash. `Array.modify` releases the
-old slot's reference before updating its child in the compiled implementation. -/
-@[inline] def insertEntriesCached [BEq α]
-    (childInsert : Node α β → USize → α → β → Node α β)
-    (es : Array (Entry α β (Node α β))) (h : USize) (key : α) (value : β) :
-    Array (Entry α β (Node α β)) :=
-  es.modify (slot h) fun entry =>
-    match entry with
-    | .null => .entry key value
-    | .entry k v => if key == k then .entry key value
-        else .ref (mkCollisionNode k v key value)
-    | .ref child => .ref (childInsert child (nextHash h) key value)
-
-/-- Hashes are recomputed only when rebuilding a promoted bucket. Specializing
-the child callback removes indirect calls from the compiled rebuild loop. -/
-@[specialize] def rebuildCached [BEq α] [Hashable α]
+-- Corresponding to `traverse` inside `insertAux`
+-- NOTE: Invariant: *insertion into an entries node always returns an entries node*, even if
+-- a slot becomes a reference to a collision node. Using an array accumulator
+-- encodes this invariant in the type, so the caller can wrap `.entries` once
+-- around the entire rebuild. No well-formedness assumption is needed for this.
+/-- Reinsert a collision node's bindings in their original order, recomputing
+hashes at the current offset. Specializing the child callback removes indirect
+calls from the compiled rebuild loop. -/
+@[specialize] def rebuild [BEq α] [Hashable α]
     (childInsert : Node α β → USize → α → β → Node α β) (offset : USize)
-    (b : Bucket α β) (i : Nat) (es : Array (Entry α β (Node α β))) :
+    (b : CollisionNode α β) (i : Nat) (es : Array (Entry α β (Node α β))) :
     Array (Entry α β (Node α β)) :=
-  if hi : i < b.keys.size then
-    let key := b.keys[i]
-    let h := (hash key).toUSize >>> offset
-    rebuildCached childInsert offset b (i + 1)
-      (insertEntriesCached childInsert es h key (b.vals[i]'(b.size_eq ▸ hi)))
-  else es
-termination_by b.keys.size - i
+  match b with
+  | ⟨.collision keys vals hsz, _⟩ =>
+    -- FIXME: Ideally, should not compare with `key.size` repetitively?
+    if hi : i < keys.size then
+      let key := keys[i]
+      let h := (hash key).toUSize >>> offset
+      let val := vals[i]'(hsz ▸ hi)
+      rebuild childInsert offset b (i + 1) (insertEntries es (fun child _ => childInsert child) h key val)
+    else es
+  | ⟨.entries _, h⟩ => nomatch h
+termination_by getCollisionNodeSize b - i
+decreasing_by simp only [getCollisionNodeSize]; omega
 
-/-- Executable insertion with a cached hash and a scalar bit offset. The
-equivalence to `insertNode` is proved in `InsertProofs`, including malformed
-nodes. At zero promotion levels the existing tree is still fully traversed. -/
-def insertNodeCached [BEq α] [Hashable α] (levels : Nat) (offset : USize)
+-- Corresponding to `insertAux`
+/-- Insertion with a cached hash and a scalar bit offset. `levels` counts the
+remaining levels at which collision nodes may be promoted. Rebuilding calls
+entries insertion at this level and node insertion at a strictly smaller level.
+At zero promotion levels the existing tree is still fully traversed. -/
+def insertNode [BEq α] [Hashable α] (levels : Nat) (offset : USize)
     (node : Node α β) (h : USize) (key : α) (value : β) : Node α β :=
   match levels with
   | 0 => insertNoExpand node h key value
   | levels + 1 =>
     match node with
-    | .entries es => .entries (insertEntriesCached
-        (insertNodeCached levels (offset + shift)) es h key value)
+    | .entries es => .entries (insertEntries es
+        (fun child _ => insertNode levels (offset + shift) child) h key value)
     | .collision keys vals hsz =>
-      let b := insertCollision ⟨.collision keys vals hsz, .mk ..⟩ 0 key value
-      match b with
-      | ⟨.collision keys vals hsz, _⟩ =>
-        if keys.size < maxCollisions then b.val
-        else .entries (rebuildCached (insertNodeCached levels (offset + shift))
-          offset ⟨keys, vals, hsz⟩ 0 mkEmptyEntriesArray)
-      | ⟨.entries _, h⟩ => nomatch h
+      let b := insertCollision keys vals hsz key value
+      if getCollisionNodeSize b < maxCollisions then b.val
+      -- NOTE: Rebuilding routes keys at the current `offset`, but its callback
+      -- inserts into children with `offset + shift` and one fewer level. Calling
+      -- full `insertNode` on the accumulator at the current level would not
+      -- decrease `levels`; `insertEntries` performs that local step without recursion.
+      else .entries (rebuild (insertNode levels (offset + shift))
+        offset b 0 mkEmptyEntriesArray)
 
 /-- Insert into the native representation. As upstream, the root has depth 1
 and promotion stops at depth 7. No equivalence to opaque partial constants is assumed. -/
 def insert [BEq α] [Hashable α] (map : Lean.PersistentHashMap α β)
     (key : α) (value : β) : Lean.PersistentHashMap α β :=
-  ⟨insertNodeCached (maxDepth.toNat - 1) 0 map.root (hash key).toUSize key value⟩
+  ⟨insertNode (maxDepth.toNat - 1) 0 map.root (hash key).toUSize key value⟩
 
 end HAMTVerify

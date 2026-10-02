@@ -6,7 +6,6 @@ public import HAMTVerify.Basic
 public import HAMTVerify.Contains
 public import HAMTVerify.Bindings
 public import HAMTVerify.Insert
-public import HAMTVerify.InsertCachedProofs
 public import HAMTVerify.InsertSized
 public import HAMTVerify.ContainsThenInsert
 public import HAMTVerify.InsertProofs

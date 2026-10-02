@@ -1,10 +1,13 @@
 module
 
-public import HAMTVerify.InsertCachedProofs
+public import HAMTVerify.Insert
+public import HAMTVerify.Size
 import all Lean.Data.PersistentHashMap
 import all Init.Data.Array.Basic
 
 @[expose] public section
+
+/-! Correctness of the total insertion implementation on native nodes. -/
 
 namespace HAMTVerify
 
@@ -12,463 +15,362 @@ open Lean.PersistentHashMap
 
 variable {α : Type u} {β : Type v}
 
-@[scoped simp] theorem hasKey_mkCollisionNode (k₁ k₂ q : α) (v₁ v₂ : β) :
-    HasKey q (mkCollisionNode k₁ v₁ k₂ v₂) ↔ q = k₁ ∨ q = k₂ := by
-  simp [mkCollisionNode]
+section Util
 
-@[scoped simp] theorem hasBinding_mkCollisionNode (k₁ k₂ q : α) (v₁ v₂ w : β) :
-    HasBinding q w (mkCollisionNode k₁ v₁ k₂ v₂) ↔
-      (q = k₁ ∧ w = v₁) ∨ (q = k₂ ∧ w = v₂) := by
-  simp only [mkCollisionNode, hasBinding_collision, Array.size_push, Array.mkEmpty, Array.size_empty]
-  constructor
-  · rintro ⟨i, hi, hk, hv⟩
-    have : i = 0 ∨ i = 1 := by omega
-    rcases this with rfl | rfl <;> simp_all [eq_comm]
-  · rintro (⟨rfl, rfl⟩ | ⟨rfl, rfl⟩)
-    · exact ⟨0, by decide, by simp, by simp⟩
-    · exact ⟨1, by decide, by simp, by simp⟩
+-- FIXME: Should not hardcode these constants
+theorem hash_shift_offset (h offset : USize) (bound : offset.toNat + 5 ≤ 30) :
+    h >>> (offset + shift) = nextHash (h >>> offset) := by
+  change h >>> (offset + 5) = (h >>> offset) >>> (5 : USize)
+  apply USize.toNat_inj.mp
+  rcases System.Platform.numBits_eq with hb | hb
+  all_goals
+    simp only [USize.toNat_shiftRight, USize.toNat_add, USize.toNat_ofNat, hb]
+    have ho : offset.toNat < System.Platform.numBits := by omega
+    have hs : offset.toNat + 5 < System.Platform.numBits := by omega
+    simp only [hb] at ho hs
+    simp only [Nat.reducePow, Nat.reduceMod]
+    rw [Nat.mod_eq_of_lt (by omega : offset.toNat + 5 < _), Nat.mod_eq_of_lt hs,
+      Nat.mod_eq_of_lt ho, Nat.shiftRight_add]
 
-theorem wellFormed_mkCollisionNode (hashAt : α → USize) (k₁ k₂ : α) (v₁ v₂ : β) :
-    WellFormed hashAt (mkCollisionNode k₁ v₁ k₂ v₂) := .collision _ _ _ _
+theorem offset_add_shift (offset : USize) (bound : offset.toNat + 5 ≤ 30) :
+    (offset + shift).toNat = offset.toNat + 5 := by
+  change (offset + 5).toNat = offset.toNat + 5
+  rcases System.Platform.numBits_eq with hb | hb <;>
+    simp only [USize.toNat_add, USize.toNat_ofNat, hb, Nat.reducePow, Nat.reduceMod] <;>
+    exact Nat.mod_eq_of_lt (by omega)
 
-theorem unique_mkCollisionNode {k₁ k₂ : α} (hne : k₁ ≠ k₂) (v₁ v₂ : β) :
-    Unique (mkCollisionNode k₁ v₁ k₂ v₂) := by
-  apply Unique.collision
-  intro i hi j hj he
-  have hi' : i = 0 ∨ i = 1 := by change i < 2 at hi; omega
-  have hj' : j = 0 ∨ j = 1 := by change j < 2 at hj; omega
-  rcases hi' with rfl | rfl <;> rcases hj' with rfl | rfl <;> simp_all [Ne.symm hne]
+end Util
 
-theorem insertAt_mem [BEq α] [LawfulBEq α] (b : Bucket α β)
+theorem insertCollisionAux_mem [BEq α] [LawfulBEq α]
+    (keys : Array α) (vals : Array β) (hsz : keys.size = vals.size)
     (i : Nat) (key q : α) (value : β) :
-    HasKey q (insertAt b i key value).node ↔ q = key ∨ HasKey q b.node := by
-  rw [insertAt]
+    HasKey q (insertCollisionAux ⟨.collision keys vals hsz, .mk ..⟩ i key value).val ↔
+      q = key ∨ HasKey q (.collision keys vals hsz) := by
+  rw [insertCollisionAux.eq_def]
+  dsimp only
   split
   · rename_i hi
-    by_cases hk : key = b.keys[i]
-    · simp only [hk, BEq.rfl, ↓reduceIte, Bucket.node, hasKey_collision, Array.set_getElem_self]
-      constructor
-      · exact Or.inr
-      · rintro (rfl | h)
-        · exact Array.mem_iff_getElem.mpr ⟨i, hi, rfl⟩
-        · exact h
-    · simp only [show (key == b.keys[i]) = false by simp [hk], Bool.false_eq_true, ↓reduceIte]
-      exact insertAt_mem b (i + 1) key q value
-  · simp [Bucket.node, or_comm]
-termination_by b.keys.size - i
+    split
+    · grind [hasKey_collision, Array.set_getElem_self]
+    · exact insertCollisionAux_mem keys vals hsz (i + 1) key q value
+  · simp [or_comm]
+termination_by keys.size - i
 
-theorem DistinctKeys.push {keys : Array α} (hu : DistinctKeys keys)
-    {key : α} (fresh : key ∉ keys) : DistinctKeys (keys.push key) := by
-  intro i hi j hj he
-  by_cases hi' : i < keys.size <;> by_cases hj' : j < keys.size
-  · exact hu i hi' j hj' (by simpa [Array.getElem_push, hi', hj'] using he)
-  · have hjEq : j = keys.size := by simp only [Array.size_push] at hj; omega
-    subst j
-    have hkey : keys[i] = key := by simpa [Array.getElem_push, hi'] using he
-    exact False.elim (fresh (Array.mem_iff_getElem.mpr ⟨i, hi', hkey⟩))
-  · have hiEq : i = keys.size := by simp only [Array.size_push] at hi; omega
-    subst i
-    have hkey : keys[j] = key := by simpa [Array.getElem_push, hj'] using he.symm
-    exact False.elim (fresh (Array.mem_iff_getElem.mpr ⟨j, hj', hkey⟩))
-  · simp only [Array.size_push] at hi hj
-    omega
-
-theorem bucket_push_binding (b : Bucket α β) (key q : α) (value w : β) :
-    HasBinding q w (Bucket.node ⟨b.keys.push key, b.vals.push value, by simp [b.size_eq]⟩) ↔
-      (q = key ∧ w = value) ∨ HasBinding q w b.node := by
-  simp only [Bucket.node, hasBinding_collision, Array.size_push]
-  constructor
-  · rintro ⟨i, hi, hk, hv⟩
-    by_cases hi' : i < b.keys.size
-    · exact Or.inr ⟨i, hi', by simpa [Array.getElem_push, hi'] using hk,
-        by simpa [Array.getElem_push, b.size_eq ▸ hi'] using hv⟩
-    · have : i = b.keys.size := by omega
-      subst i
-      exact Or.inl ⟨by simpa using hk.symm, by simpa [b.size_eq] using hv.symm⟩
-  · rintro (⟨rfl, rfl⟩ | ⟨i, hi, hk, hv⟩)
-    · exact ⟨b.keys.size, by omega, by simp, by simp [b.size_eq]⟩
-    · exact ⟨i, by omega, by simpa [Array.getElem_push, hi] using hk,
-        by simpa [Array.getElem_push, b.size_eq ▸ hi] using hv⟩
-
-theorem insertAt_unique_updated [BEq α] [LawfulBEq α] (b : Bucket α β)
-    (hu : DistinctKeys b.keys) (i : Nat) (key : α) (value : β)
-    (scanned : ∀ (j : Nat) (hj : j < b.keys.size), j < i → b.keys[j] ≠ key) :
-    Unique (insertAt b i key value).node ∧ Updated b.node (insertAt b i key value).node key value := by
-  rw [insertAt]
+theorem insertCollisionAux_unique_updated [BEq α] [LawfulBEq α] (keys : Array α) (vals : Array β) (hsz : keys.size = vals.size)
+    (hu : DistinctKeys keys) (i : Nat) (key : α) (value : β)
+    (scanned : ∀ (j : Nat) (hj : j < keys.size), j < i → keys[j] ≠ key) :
+    letI res := insertCollisionAux ⟨.collision keys vals hsz, .mk ..⟩ i key value
+    Unique res.val ∧ Updated (.collision keys vals hsz) res.val key value := by
+  rw [insertCollisionAux.eq_def]
+  dsimp only
   split
   · rename_i hi
-    by_cases hk : key = b.keys[i]
-    · simp only [show (key == b.keys[i]) = true by simp [hk], ↓reduceIte]
-      have keys_same : b.keys.set i key = b.keys := by rw [hk]; simp
-      constructor
+    split
+    · constructor
       · apply Unique.collision
-        simpa only [keys_same] using hu
+        grind [Array.set_getElem_self]
       · intro q w
-        simp only [Bucket.node, hasBinding_collision, Array.size_set, Array.getElem_set]
-        constructor
-        · rintro ⟨j, hj, hq, hw⟩
-          by_cases hji : j = i
-          · subst j; exact Or.inl ⟨by simpa using hq.symm, by simpa using hw.symm⟩
-          · have hq' : b.keys[j] = q := by simpa [Ne.symm hji] using hq
-            refine Or.inr ⟨?_, j, hj, hq', by simpa [Ne.symm hji] using hw⟩
-            intro hqk
-            exact hji (hu j hj i hi (hq'.trans (hqk.trans hk)))
-        · rintro (⟨rfl, rfl⟩ | ⟨hne, j, hj, hq, hw⟩)
-          · exact ⟨i, hi, by simp, by simp⟩
-          · have hij : i ≠ j := by intro he; subst j; exact hne (hq.symm.trans hk.symm)
-            exact ⟨j, hj, by simpa [hij] using hq, by simpa [hij] using hw⟩
-    · simp only [show (key == b.keys[i]) = false by simp [hk], Bool.false_eq_true, ↓reduceIte]
-      apply insertAt_unique_updated b hu (i + 1) key value
-      intro j hj hji
-      by_cases he : j = i
-      · subst j; exact Ne.symm hk
-      · exact scanned j hj (by omega)
+        simp only [hasBinding_collision, Array.size_set, Array.getElem_set]
+        grind [DistinctKeys]
+    · apply insertCollisionAux_unique_updated keys vals hsz hu (i + 1) key value
+      grind
   · rename_i hi
-    have fresh : key ∉ b.keys := by
-      intro h
-      obtain ⟨j, hj, hk⟩ := Array.mem_iff_getElem.mp h
-      exact scanned j hj (by omega) hk
+    have fresh : key ∉ keys := by grind [Array.mem_iff_getElem]
     constructor
     · exact .collision (hu.push fresh)
     · intro q w
-      rw [bucket_push_binding]
-      constructor
-      · rintro (h | h)
-        · exact Or.inl h
-        · refine Or.inr ⟨?_, h⟩
-          intro he; subst q; exact fresh (by simpa [Bucket.node] using h.hasKey)
-      · rintro (h | ⟨_, h⟩)
-        · exact Or.inl h
-        · exact Or.inr h
-termination_by b.keys.size - i
+      rw [collision_push_binding keys vals hsz]
+      grind [→ HasBinding.hasKey, hasKey_collision]
+termination_by keys.size - i
 
 theorem insertEntries_wf_mem [BEq α] [LawfulBEq α]
-    (childInsert : Node α β → α → β → Node α β) (hashAt : α → USize)
-    (es : Array (Entry α β (Node α β))) (key : α) (value : β)
+    (hashAt : α → USize) (es : Array (Entry α β (Node α β)))
+    (childInsert : (child : Node α β) → .ref child ∈ es → USize → α → β → Node α β)
+    (key : α) (value : β)
     (wf : WellFormed hashAt (.entries es))
-    (childSpec : ∀ (j : Nat) (hj : j < es.size) (child : Node α β), es[j] = .ref child →
-      WellFormed (fun q => nextHash (hashAt q)) (childInsert child key value) ∧
-        ∀ q, HasKey q (childInsert child key value) ↔ q = key ∨ HasKey q child) :
-    WellFormed hashAt (.entries (insertEntries childInsert hashAt es key value)) ∧
-      ∀ q, HasKey q (.entries (insertEntries childInsert hashAt es key value)) ↔
+    (childSpec : ∀ (child : Node α β) (hmem : .ref child ∈ es),
+      letI res := (childInsert child hmem (nextHash (hashAt key)) key value)
+      WellFormed (fun q => nextHash (hashAt q)) res ∧
+        ∀ q, HasKey q res ↔
+          q = key ∨ HasKey q child) :
+    letI res := insertEntries es childInsert (hashAt key) key value
+    WellFormed hashAt (.entries res) ∧
+      ∀ q, HasKey q (.entries res) ↔
         q = key ∨ HasKey q (.entries es) := by
   have hi := wf.slot_lt (hashAt key)
   have finish (e : Entry α β (Node α β))
       (mem : ∀ q, EntryHasKey q e ↔ q = key ∨ EntryHasKey q es[slot (hashAt key)])
       (hc : ∀ n, e = .ref n → WellFormed (fun q => nextHash (hashAt q)) n) :
-      WellFormed hashAt (.entries (es.set (slot (hashAt key)) e)) ∧
-        ∀ q, HasKey q (.entries (es.set (slot (hashAt key)) e)) ↔
+      letI res := (.entries (es.set (slot (hashAt key)) e))
+      WellFormed hashAt res ∧
+        ∀ q, HasKey q res ↔
           q = key ∨ HasKey q (.entries es) := by
     constructor
     · apply wellFormed_set wf _ hi e _ hc
-      intro q hq
-      rcases (mem q).mp hq with rfl | hq
-      · rfl
-      · cases wf with | entries _ route _ => exact route _ hi q hq
+      cases wf <;> grind
     · exact hasKey_set_iff _ hi e key mem
-  simp only [insertEntries, Array.modify, Array.modifyM, dif_pos hi, Id.run, bind, pure]
-  cases he : es[slot (hashAt key)] with
-  | null =>
-    refine finish _ ?_ ?_
-    · intro q; simp [EntryHasKey, he]
-    · intro n hn; cases hn
-  | entry k v =>
-    by_cases hk : key = k
-    · subst k
-      simp only [BEq.rfl, ↓reduceIte]
-      refine finish _ ?_ ?_
-      · intro q; simp [EntryHasKey, he]
-      · intro n hn; cases hn
-    · simp only [show (key == k) = false by simp [hk], Bool.false_eq_true, ↓reduceIte]
-      refine finish _ ?_ ?_
-      · intro q; simp [EntryHasKey, he, or_comm]
-      · intro n hn; cases hn; exact wellFormed_mkCollisionNode _ _ _ _ _
-  | ref child =>
-    obtain ⟨hw, hm⟩ := childSpec _ hi child he
-    refine finish _ ?_ ?_
-    · intro q; simpa [EntryHasKey, he] using hm q
-    · intro n hn; cases hn; exact hw
+  simp only [insertEntries, Array.modifyWithCallBackProof, dif_pos hi,
+    Array.modifyInBoundWithCallBackProof]
+  split
+  · apply finish <;> grind [EntryHasKey]
+  · split <;> apply finish <;>
+      grind [EntryHasKey, hasKey_mkCollisionNode, wellFormed_mkCollisionNode]
+  · rename_i child hmem he _
+    have := childSpec child hmem
+    apply finish <;> grind [EntryHasKey]
 
 theorem insertEntries_unique_updated [BEq α] [LawfulBEq α]
-    (childInsert : Node α β → α → β → Node α β) (hashAt : α → USize)
-    (es : Array (Entry α β (Node α β))) (key : α) (value : β)
+    (hashAt : α → USize) (es : Array (Entry α β (Node α β)))
+    (childInsert : (child : Node α β) → .ref child ∈ es → USize → α → β → Node α β)
+    (key : α) (value : β)
     (wf : WellFormed hashAt (.entries es)) (hu : Unique (.entries es))
-    (childSpec : ∀ (j : Nat) (hj : j < es.size) (child : Node α β), es[j] = .ref child →
-      Unique child → Unique (childInsert child key value) ∧
-        Updated child (childInsert child key value) key value) :
-    Unique (.entries (insertEntries childInsert hashAt es key value)) ∧
-      Updated (.entries es) (.entries (insertEntries childInsert hashAt es key value)) key value := by
+    (childSpec : ∀ (child : Node α β) (hmem : .ref child ∈ es),
+      letI res := childInsert child hmem (nextHash (hashAt key)) key value
+      Unique child → Unique res ∧ Updated child res key value) :
+    letI res := insertEntries es childInsert (hashAt key) key value
+    Unique (.entries res) ∧ Updated (.entries es) (.entries res) key value := by
   have hi := wf.slot_lt (hashAt key)
   have finish (e : Entry α β (Node α β))
       (hc : ∀ n, e = .ref n → Unique n)
       (upd : ∀ q w, EntryHasBinding q w e ↔
         (q = key ∧ w = value) ∨ (q ≠ key ∧ EntryHasBinding q w es[slot (hashAt key)])) :
-      Unique (.entries (es.set (slot (hashAt key)) e)) ∧
-        Updated (.entries es) (.entries (es.set (slot (hashAt key)) e)) key value :=
+      letI res := .entries (es.set (slot (hashAt key)) e)
+      Unique res ∧ Updated (.entries es) res key value :=
     ⟨unique_set hu _ hi e hc, updated_set wf key value hi e upd⟩
-  simp only [insertEntries, Array.modify, Array.modifyM, dif_pos hi, Id.run, bind, pure]
-  cases he : es[slot (hashAt key)] with
-  | null =>
-    refine finish _ ?_ ?_
-    · intro n hn; cases hn
-    · intro q w; simp [EntryHasBinding, he]
-  | entry k v =>
-    by_cases hk : key = k
-    · subst k
-      simp only [BEq.rfl, ↓reduceIte]
-      refine finish _ ?_ ?_
-      · intro n hn; cases hn
-      · intro q w; simp only [EntryHasBinding, he]; grind
-    · simp only [show (key == k) = false by simp [hk], Bool.false_eq_true, ↓reduceIte]
-      refine finish _ ?_ ?_
-      · intro n hn; cases hn; exact unique_mkCollisionNode (Ne.symm hk) _ _
-      · intro q w
-        simp only [EntryHasBinding, he, hasBinding_mkCollisionNode]
-        grind
-  | ref child =>
-    have hchild : Unique child := by cases hu with | entries hc => exact hc _ hi child he
-    obtain ⟨hu', hupd⟩ := childSpec _ hi child he hchild
-    refine finish _ ?_ ?_
-    · intro n hn; cases hn; exact hu'
-    · intro q w; simpa [EntryHasBinding, he] using hupd q w
-
-theorem insertNoExpand_entries [BEq α] (es : Array (Entry α β (Node α β)))
-    (hashAt : α → USize) (key : α) (value : β) :
-    insertNoExpand (.entries es) (hashAt key) key value =
-      .entries (insertEntries (fun n k v => insertNoExpand n (nextHash (hashAt k)) k v)
-        hashAt es key value) := by
-  rw [insertNoExpand]
-  simp only [insertEntries, Array.modify, Array.modifyM, Id.run, bind, pure]
+  simp only [insertEntries, Array.modifyWithCallBackProof, dif_pos hi,
+    Array.modifyInBoundWithCallBackProof]
   split
-  · split <;> simp_all [Array.set_set]
-  · rfl
+  · apply finish <;> grind [EntryHasBinding]
+  · split <;> apply finish <;>
+      grind [EntryHasBinding, hasBinding_mkCollisionNode, unique_mkCollisionNode]
+  · rename_i child hmem he _
+    have hchild : Unique child := by cases hu <;> grind
+    have := childSpec child hmem hchild
+    apply finish <;> grind [EntryHasBinding, Updated]
 
 theorem insertNoExpand_wf_mem [BEq α] [LawfulBEq α] {hashAt : α → USize}
     {node : Node α β} (wf : WellFormed hashAt node) (key : α) (value : β) :
-    WellFormed hashAt (insertNoExpand node (hashAt key) key value) ∧
-      ∀ q, HasKey q (insertNoExpand node (hashAt key) key value) ↔ q = key ∨ HasKey q node := by
+    letI res := insertNoExpand node (hashAt key) key value
+    WellFormed hashAt res ∧ ∀ q, HasKey q res ↔ q = key ∨ HasKey q node := by
   induction wf generalizing key value with
   | collision hashAt keys vals hsz =>
-    rw [insertNoExpand, insertCollision_eq ⟨keys, vals, hsz⟩]
-    exact ⟨.collision _ _ _ _, fun q => insertAt_mem _ 0 key q value⟩
+    rw [insertNoExpand.eq_def]
+    exact ⟨wellFormed_collisionNode _ _, fun q => insertCollisionAux_mem keys vals hsz 0 key q value⟩
   | @entries hashAt es hs route children ih =>
-    rw [insertNoExpand_entries]
-    apply insertEntries_wf_mem _ _ _ _ _ (.entries hs route children)
-    intro j hj child he
-    exact ih j hj child he key value
+    rw [insertNoExpand.eq_def]
+    apply insertEntries_wf_mem hashAt es _ key value (.entries hs route children)
+    grind [Array.mem_iff_getElem]
 
 theorem insertNoExpand_unique_updated [BEq α] [LawfulBEq α] {hashAt : α → USize}
     {node : Node α β} (wf : WellFormed hashAt node) (hu : Unique node) (key : α) (value : β) :
-    Unique (insertNoExpand node (hashAt key) key value) ∧
-      Updated node (insertNoExpand node (hashAt key) key value) key value := by
+    letI res := insertNoExpand node (hashAt key) key value
+    Unique res ∧ Updated node res key value := by
   induction wf generalizing key value with
   | collision hashAt keys vals hsz =>
-    rw [insertNoExpand, insertCollision_eq ⟨keys, vals, hsz⟩]
+    rw [insertNoExpand.eq_def]
     cases hu with
-    | collision distinct => exact insertAt_unique_updated _ distinct 0 key value (by omega)
+    | collision distinct =>
+      exact insertCollisionAux_unique_updated keys vals hsz distinct 0 key value (by omega)
   | @entries hashAt es hs route children ih =>
-    rw [insertNoExpand_entries]
-    apply insertEntries_unique_updated _ _ _ _ _ (.entries hs route children) hu
-    intro j hj child he hchild
-    exact ih j hj child he hchild key value
+    rw [insertNoExpand.eq_def]
+    apply insertEntries_unique_updated hashAt es _ key value (.entries hs route children) hu
+    grind [Array.mem_iff_getElem]
 
-theorem rebuild_wf_mem [BEq α] [LawfulBEq α]
-    (childInsert : Node α β → α → β → Node α β) (hashAt : α → USize)
-    (childSpec : ∀ n, WellFormed (fun q => nextHash (hashAt q)) n → ∀ k v,
-      WellFormed (fun q => nextHash (hashAt q)) (childInsert n k v) ∧
-        ∀ q, HasKey q (childInsert n k v) ↔ q = k ∨ HasKey q n)
-    (b : Bucket α β) (i : Nat) (es : Array (Entry α β (Node α β)))
-    (wf : WellFormed hashAt (.entries es)) :
-    WellFormed hashAt (.entries (rebuild childInsert hashAt b i es)) ∧
-      ∀ q, HasKey q (.entries (rebuild childInsert hashAt b i es)) ↔
-        HasKey q (.entries es) ∨ ∃ (j : Nat) (hj : j < b.keys.size), i ≤ j ∧ b.keys[j] = q := by
-  rw [rebuild]
+theorem rebuild_wf_mem [BEq α] [LawfulBEq α] [Hashable α]
+    (childInsert : Node α β → USize → α → β → Node α β) (offset : USize)
+    (childSpec :
+      letI hashAt := fun q : α => nextHash ((hash q).toUSize >>> offset)
+      ∀ n, WellFormed hashAt n → ∀ k v,
+        letI res := childInsert n (hashAt k) k v
+        WellFormed hashAt res ∧ ∀ q, HasKey q res ↔ q = k ∨ HasKey q n)
+    (keys : Array α) (vals : Array β) (hsz : keys.size = vals.size)
+    (i : Nat) (es : Array (Entry α β (Node α β)))
+    (wf : WellFormed (fun q => (hash q).toUSize >>> offset) (.entries es)) :
+    letI res := rebuild childInsert offset ⟨.collision keys vals hsz, .mk ..⟩ i es
+    WellFormed (fun q => (hash q).toUSize >>> offset) (.entries res) ∧
+      ∀ q, HasKey q (.entries res) ↔
+        HasKey q (.entries es) ∨ ∃ (j : Nat) (hj : j < keys.size), i ≤ j ∧ keys[j] = q := by
+  rw [rebuild.eq_def]
+  dsimp only
   split
   · rename_i hi
-    have step := insertEntries_wf_mem childInsert hashAt es b.keys[i]
-      (b.vals[i]'(b.size_eq ▸ hi)) wf (by
-        intro j hj child he
-        cases wf with | entries _ _ hc => exact childSpec child (hc j hj child he) _ _)
-    obtain ⟨hw, hm⟩ := rebuild_wf_mem childInsert hashAt childSpec b (i + 1) _ step.1
+    have step := insertEntries_wf_mem (fun q => (hash q).toUSize >>> offset) es
+      (fun child _ => childInsert child) keys[i]
+      (vals[i]'(hsz ▸ hi)) wf (by
+        cases wf <;> grind [Array.mem_iff_getElem])
+    obtain ⟨hw, hm⟩ := rebuild_wf_mem childInsert offset childSpec keys vals hsz (i + 1) _ step.1
     refine ⟨hw, ?_⟩
     intro q
     rw [hm, step.2]
-    constructor
-    · rintro ((hk | hold) | ⟨j, hj, hij, hk⟩)
-      · exact Or.inr ⟨i, hi, Nat.le_refl _, hk.symm⟩
-      · exact Or.inl hold
-      · exact Or.inr ⟨j, hj, by omega, hk⟩
-    · rintro (hold | ⟨j, hj, hij, hk⟩)
-      · exact Or.inl (Or.inr hold)
-      · by_cases he : j = i
-        · subst j; exact Or.inl (Or.inl hk.symm)
-        · exact Or.inr ⟨j, hj, by omega, hk⟩
-  · rename_i hi
-    refine ⟨wf, ?_⟩
-    intro q
-    constructor
-    · exact Or.inl
-    · rintro (h | ⟨j, hj, hij, _⟩)
-      · exact h
-      · omega
-termination_by b.keys.size - i
+    grind
+  · exact ⟨wf, by grind⟩
+termination_by keys.size - i
 
-theorem insertNode_wf_mem [BEq α] [LawfulBEq α] (levels : Nat)
-    (hashAt : α → USize) (node : Node α β) (wf : WellFormed hashAt node)
+/-- Insertion preserves routing and membership for the hash at the current offset.
+The bound keeps the offset arithmetic valid on both 32-bit and 64-bit platforms. -/
+theorem insertNode_wf_mem [BEq α] [LawfulBEq α] [Hashable α] (levels : Nat)
+    (offset : USize) (bound : offset.toNat + 5 * levels ≤ 30)
+    (node : Node α β) (wf : WellFormed (fun k => (hash k).toUSize >>> offset) node)
     (key : α) (value : β) :
-    WellFormed hashAt (insertNode levels hashAt node key value) ∧
-      ∀ q, HasKey q (insertNode levels hashAt node key value) ↔ q = key ∨ HasKey q node := by
-  induction levels generalizing hashAt node key value with
+    letI res := insertNode levels offset node ((hash key).toUSize >>> offset) key value
+    WellFormed (fun k => (hash k).toUSize >>> offset) res ∧
+      ∀ q, HasKey q res ↔ q = key ∨ HasKey q node := by
+  induction levels generalizing offset node key value with
   | zero => exact insertNoExpand_wf_mem wf key value
   | succ levels ih =>
+    have hb : offset.toNat + 5 ≤ 30 := by omega
+    have hn : (offset + shift).toNat + 5 * levels ≤ 30 := by
+      rw [offset_add_shift offset hb]
+      omega
+    have childSpec := ih (offset + shift) hn
+    simp only [hash_shift_offset _ offset hb] at childSpec
     cases node with
     | entries es =>
       simp only [insertNode]
-      apply insertEntries_wf_mem _ _ _ _ _ wf
-      intro j hj child he
-      cases wf with | entries _ _ hc => exact ih _ child (hc j hj child he) key value
+      apply insertEntries_wf_mem _ es _ key value wf
+      cases wf <;> grind [Array.mem_iff_getElem]
     | collision keys vals hsz =>
       simp only [insertNode]
-      split
-      · exact ⟨.collision _ _ _ _, fun q => insertAt_mem _ 0 key q value⟩
-      · have rebuilt := rebuild_wf_mem
-          (insertNode levels (fun q => nextHash (hashAt q))) hashAt
-          (fun n hn k v => ih _ n hn k v)
-          (insertAt ⟨keys, vals, hsz⟩ 0 key value) 0 mkEmptyEntriesArray (wellFormed_empty _)
-        refine ⟨rebuilt.1, ?_⟩
-        intro q
-        rw [rebuilt.2]
-        have empty : ¬ HasKey q (mkEmptyEntries : Node α β) := by
-          simp [mkEmptyEntries, hasKey_entries, mkEmptyEntriesArray, EntryHasKey]
-        simp only [show ¬ HasKey q (.entries (mkEmptyEntriesArray : Array (Entry α β (Node α β)))) from empty,
-          false_or, Nat.zero_le, true_and]
-        rw [← Array.mem_iff_getElem]
-        simpa only [Bucket.node, hasKey_collision] using
-          (insertAt_mem ⟨keys, vals, hsz⟩ 0 key q value)
+      generalize hc : insertCollision keys vals hsz key value = b
+      have hm (q : α) : HasKey q b.val ↔ q = key ∨ HasKey q (.collision keys vals hsz) := by
+        rw [← hc]
+        exact insertCollisionAux_mem keys vals hsz 0 key q value
+      obtain ⟨node, hb⟩ := b
+      cases hb with
+      | mk keys' vals' hsz' =>
+        simp only [getCollisionNodeSize]
+        split
+        · exact ⟨.collision _ _ _ _, hm⟩
+        · have rebuilt := rebuild_wf_mem (insertNode levels (offset + shift)) offset childSpec
+            keys' vals' hsz' 0 mkEmptyEntriesArray (wellFormed_empty _)
+          refine ⟨rebuilt.1, ?_⟩
+          intro q
+          rw [rebuilt.2]
+          simpa [hasKey_entries, mkEmptyEntriesArray, EntryHasKey, ← Array.mem_iff_getElem] using hm q
 
 /-- Rebuilding preserves every binding of a distinct bucket. The accumulator
 must not already contain a key in the unprocessed suffix. -/
-theorem rebuild_unique_bindings [BEq α] [LawfulBEq α]
-    (childInsert : Node α β → α → β → Node α β) (hashAt : α → USize)
-    (childWF : ∀ n, WellFormed (fun q => nextHash (hashAt q)) n → ∀ k v,
-      WellFormed (fun q => nextHash (hashAt q)) (childInsert n k v) ∧
-        ∀ q, HasKey q (childInsert n k v) ↔ q = k ∨ HasKey q n)
-    (childUpd : ∀ n, WellFormed (fun q => nextHash (hashAt q)) n → Unique n → ∀ k v,
-      Unique (childInsert n k v) ∧ Updated n (childInsert n k v) k v)
-    (b : Bucket α β) (distinct : DistinctKeys b.keys) (i : Nat)
+theorem rebuild_unique_bindings [BEq α] [LawfulBEq α] [Hashable α]
+    (childInsert : Node α β → USize → α → β → Node α β) (offset : USize)
+    (childWF :
+      letI hashAt := fun q : α => nextHash ((hash q).toUSize >>> offset)
+      ∀ n, WellFormed hashAt n → ∀ k v,
+        letI res := childInsert n (hashAt k) k v
+        WellFormed hashAt res ∧ ∀ q, HasKey q res ↔ q = k ∨ HasKey q n)
+    (childUpd :
+      letI hashAt := fun q : α => nextHash ((hash q).toUSize >>> offset)
+      ∀ n, WellFormed hashAt n → Unique n → ∀ k v,
+        letI res := childInsert n (hashAt k) k v
+        Unique res ∧ Updated n res k v)
+    (keys : Array α) (vals : Array β) (hsz : keys.size = vals.size)
+    (distinct : DistinctKeys keys) (i : Nat)
     (es : Array (Entry α β (Node α β)))
-    (wf : WellFormed hashAt (.entries es)) (hu : Unique (.entries es))
-    (disjoint : ∀ (j : Nat) (hj : j < b.keys.size), i ≤ j → ¬ HasKey b.keys[j] (.entries es)) :
-    Unique (.entries (rebuild childInsert hashAt b i es)) ∧
-      ∀ q w, HasBinding q w (.entries (rebuild childInsert hashAt b i es)) ↔
+    (wf : WellFormed (fun q => (hash q).toUSize >>> offset) (.entries es)) (hu : Unique (.entries es))
+    (disjoint : ∀ (j : Nat) (hj : j < keys.size), i ≤ j → ¬ HasKey keys[j] (.entries es)) :
+    letI res := rebuild childInsert offset ⟨.collision keys vals hsz, .mk ..⟩ i es
+    Unique (.entries res) ∧
+      ∀ q w, HasBinding q w (.entries res) ↔
         HasBinding q w (.entries es) ∨
-          ∃ (j : Nat) (hj : j < b.keys.size), i ≤ j ∧ b.keys[j] = q ∧ b.vals[j]'(b.size_eq ▸ hj) = w := by
-  rw [rebuild]
+          ∃ (j : Nat) (hj : j < keys.size), i ≤ j ∧ keys[j] = q ∧ vals[j]'(hsz ▸ hj) = w := by
+  rw [rebuild.eq_def]
+  dsimp only
   split
   · rename_i hi
-    have stepWM := insertEntries_wf_mem childInsert hashAt es b.keys[i]
-      (b.vals[i]'(b.size_eq ▸ hi)) wf (by
-        intro j hj child he
-        cases wf with | entries _ _ hc => exact childWF child (hc j hj child he) _ _)
-    have stepUV := insertEntries_unique_updated childInsert hashAt es b.keys[i]
-      (b.vals[i]'(b.size_eq ▸ hi)) wf hu (by
-        intro j hj child he hu'
-        cases wf with | entries _ _ hc => exact childUpd child (hc j hj child he) hu' _ _)
-    have nextDisjoint : ∀ (j : Nat) (hj : j < b.keys.size), i + 1 ≤ j →
-        ¬ HasKey b.keys[j] (.entries (insertEntries childInsert hashAt es b.keys[i]
-          (b.vals[i]'(b.size_eq ▸ hi)))) := by
-      intro j hj hij hmem
-      rcases (stepWM.2 _).mp hmem with he | hold
-      · have := distinct j hj i hi he
-        omega
-      · exact disjoint j hj (by omega) hold
-    obtain ⟨hu', hb'⟩ := rebuild_unique_bindings childInsert hashAt childWF childUpd
-      b distinct (i + 1) _ stepWM.1 stepUV.1 nextDisjoint
+    have stepWM := insertEntries_wf_mem (fun q => (hash q).toUSize >>> offset) es
+      (fun child _ => childInsert child) keys[i]
+      (vals[i]'(hsz ▸ hi)) wf (by
+        cases wf <;> grind [Array.mem_iff_getElem])
+    have stepUV := insertEntries_unique_updated (fun q => (hash q).toUSize >>> offset) es
+      (fun child _ => childInsert child) keys[i]
+      (vals[i]'(hsz ▸ hi)) wf hu (by
+        cases wf <;> grind [Array.mem_iff_getElem])
+    have nextDisjoint : ∀ (j : Nat) (hj : j < keys.size), i + 1 ≤ j →
+        ¬ HasKey keys[j] (.entries (insertEntries es (fun child _ => childInsert child)
+          ((hash keys[i]).toUSize >>> offset) keys[i] (vals[i]'(hsz ▸ hi)))) := by
+      intro j hj hij
+      rw [stepWM.2]
+      grind [DistinctKeys]
+    obtain ⟨hu', hb'⟩ := rebuild_unique_bindings childInsert offset childWF childUpd
+      keys vals hsz distinct (i + 1) _ stepWM.1 stepUV.1 nextDisjoint
     refine ⟨hu', ?_⟩
     intro q w
     rw [hb', stepUV.2]
-    constructor
-    · rintro ((⟨hk, hv⟩ | ⟨_, hold⟩) | ⟨j, hj, hij, hk, hv⟩)
-      · exact Or.inr ⟨i, hi, Nat.le_refl _, hk.symm, hv.symm⟩
-      · exact Or.inl hold
-      · exact Or.inr ⟨j, hj, by omega, hk, hv⟩
-    · rintro (hold | ⟨j, hj, hij, hk, hv⟩)
-      · refine Or.inl (Or.inr ⟨?_, hold⟩)
-        intro he
-        subst q
-        exact disjoint i hi (Nat.le_refl _) hold.hasKey
-      · by_cases he : j = i
-        · subst j; exact Or.inl (Or.inl ⟨hk.symm, hv.symm⟩)
-        · exact Or.inr ⟨j, hj, by omega, hk, hv⟩
-  · rename_i hi
-    refine ⟨hu, ?_⟩
-    intro q w
-    constructor
-    · exact Or.inl
-    · rintro (h | ⟨j, hj, hij, _, _⟩)
-      · exact h
-      · omega
-termination_by b.keys.size - i
+    grind [HasBinding.hasKey]
+  · exact ⟨hu, by grind⟩
+termination_by keys.size - i
 
-theorem insertNode_unique_updated [BEq α] [LawfulBEq α] (levels : Nat)
-    (hashAt : α → USize) (node : Node α β) (wf : WellFormed hashAt node) (hu : Unique node)
-    (key : α) (value : β) :
-    Unique (insertNode levels hashAt node key value) ∧
-      Updated node (insertNode levels hashAt node key value) key value := by
-  induction levels generalizing hashAt node key value with
+theorem insertNode_unique_updated [BEq α] [LawfulBEq α] [Hashable α] (levels : Nat)
+    (offset : USize) (bound : offset.toNat + 5 * levels ≤ 30)
+    (node : Node α β) (wf : WellFormed (fun k => (hash k).toUSize >>> offset) node)
+    (hu : Unique node) (key : α) (value : β) :
+    letI res := insertNode levels offset node ((hash key).toUSize >>> offset) key value
+    Unique res ∧ Updated node res key value := by
+  induction levels generalizing offset node key value with
   | zero => exact insertNoExpand_unique_updated wf hu key value
   | succ levels ih =>
+    have hb : offset.toNat + 5 ≤ 30 := by omega
+    have hn : (offset + shift).toNat + 5 * levels ≤ 30 := by
+      rw [offset_add_shift offset hb]
+      omega
+    have childWF := insertNode_wf_mem (α := α) (β := β) levels (offset + shift) hn
+    have childUpd := ih (offset + shift) hn
+    simp only [hash_shift_offset _ offset hb] at childWF childUpd
     cases node with
     | entries es =>
       simp only [insertNode]
-      apply insertEntries_unique_updated _ _ _ _ _ wf hu
-      intro j hj child he hu'
-      cases wf with | entries _ _ hc => exact ih _ child (hc j hj child he) hu' key value
+      apply insertEntries_unique_updated _ es _ key value wf hu
+      cases wf <;> grind [Array.mem_iff_getElem]
     | collision keys vals hsz =>
       have distinct : DistinctKeys keys := by cases hu with | collision h => exact h
-      have bucketUV := insertAt_unique_updated ⟨keys, vals, hsz⟩ distinct 0 key value (by omega)
+      have uv := insertCollisionAux_unique_updated keys vals hsz distinct 0 key value (by omega)
+      rw [← insertCollision.eq_def] at uv
       simp only [insertNode]
-      split
-      · exact bucketUV
-      · have distinct' : DistinctKeys (insertAt ⟨keys, vals, hsz⟩ 0 key value).keys := by
-          cases bucketUV.1 with | collision h => exact h
-        have rebuilt := rebuild_unique_bindings
-          (insertNode levels (fun q => nextHash (hashAt q))) hashAt
-          (fun n hn k v => insertNode_wf_mem levels _ n hn k v)
-          (fun n hn un k v => ih _ n hn un k v)
-          (insertAt ⟨keys, vals, hsz⟩ 0 key value) distinct' 0 mkEmptyEntriesArray
-          (wellFormed_empty _) unique_empty (by
-            intro j hj hij
-            simp [hasKey_entries, mkEmptyEntriesArray, EntryHasKey])
-        refine ⟨rebuilt.1, ?_⟩
-        intro q w
-        rw [rebuilt.2]
-        have empty : ¬ HasBinding q w (.entries (mkEmptyEntriesArray : Array (Entry α β (Node α β)))) := by
-          simp [hasBinding_entries, mkEmptyEntriesArray, EntryHasBinding]
-        simp only [empty, false_or, Nat.zero_le, true_and]
-        rw [← hasBinding_collision]
-        exact bucketUV.2 q w
+      generalize hc : insertCollision keys vals hsz key value = b at uv ⊢
+      obtain ⟨node, hb⟩ := b
+      cases hb with
+      | mk keys' vals' hsz' =>
+        simp only [getCollisionNodeSize]
+        split
+        · exact uv
+        · have distinct' : DistinctKeys keys' := by cases uv.1 with | collision h => exact h
+          have rebuilt := rebuild_unique_bindings (insertNode levels (offset + shift)) offset
+            childWF childUpd keys' vals' hsz' distinct' 0 mkEmptyEntriesArray
+            (wellFormed_empty _) unique_empty (by
+              intro j hj hij
+              simp [hasKey_entries, mkEmptyEntriesArray, EntryHasKey])
+          refine ⟨rebuilt.1, ?_⟩
+          intro q w
+          rw [rebuilt.2]
+          simpa [hasBinding_entries, mkEmptyEntriesArray, EntryHasBinding] using uv.2 q w
+
+private theorem root_offset_bound : (0 : USize).toNat + 5 * (maxDepth.toNat - 1) ≤ 30 := by
+  rcases System.Platform.numBits_eq with hb | hb <;>
+    simp [maxDepth, USize.toNat_ofNat, hb]
+
+section MainParts
 
 /-- Insertion preserves the routing invariant even when the input has duplicate keys. -/
 theorem valid_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (key : α) (value : β) :
     Valid (insert map key value) := by
-  simpa only [Valid, insert_root_eq] using (insertNode_wf_mem _ _ map.root wf key value).1
+  simpa [Valid, insert] using
+    (insertNode_wf_mem (maxDepth.toNat - 1) 0 root_offset_bound map.root
+      (by simpa [Valid] using wf) key value).1
 
 /-- Exact membership update; uniqueness is not needed. -/
 theorem mem_insert_iff [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (key q : α) (value : β) :
     Mem q (insert map key value) ↔ q = key ∨ Mem q map := by
-  simpa only [Mem, insert_root_eq] using (insertNode_wf_mem _ _ map.root wf key value).2 q
+  simpa [Mem, insert] using
+    (insertNode_wf_mem (maxDepth.toNat - 1) 0 root_offset_bound map.root
+      (by simpa [Valid] using wf) key value).2 q
 
 theorem unique_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
     (key : α) (value : β) : Unique (insert map key value).root := by
-  simpa only [insert_root_eq] using (insertNode_unique_updated _ _ map.root wf hu key value).1
-
-/-- Abstract map binding, defined by the stored keys and values rather than lookup. -/
-def MapsTo [BEq α] [Hashable α] (key : α) (value : β)
-    (map : Lean.PersistentHashMap α β) : Prop := HasBinding key value map.root
+  simpa [insert] using
+    (insertNode_unique_updated (maxDepth.toNat - 1) 0 root_offset_bound map.root
+      (by simpa [Valid] using wf) hu key value).1
 
 /-- The complete key/value update law. Replacing a key discards its old binding;
 all other bindings are preserved. `Unique` rules out duplicate collision keys. -/
@@ -477,7 +379,9 @@ theorem mapsTo_insert_iff [BEq α] [LawfulBEq α] [Hashable α]
     (key q : α) (value w : β) :
     MapsTo q w (insert map key value) ↔
       (q = key ∧ w = value) ∨ (q ≠ key ∧ MapsTo q w map) := by
-  simpa only [MapsTo, insert_root_eq] using (insertNode_unique_updated _ _ map.root wf hu key value).2 q w
+  simpa [MapsTo, insert] using
+    (insertNode_unique_updated (maxDepth.toNat - 1) 0 root_offset_bound map.root
+      (by simpa [Valid] using wf) hu key value).2 q w
 
 @[scoped simp] theorem mapsTo_insert_self [BEq α] [LawfulBEq α] [Hashable α]
     (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
@@ -503,19 +407,44 @@ theorem contains_insert [BEq α] [LawfulBEq α] [Hashable α]
     contains (insert map key value) key = true := by
   simp [contains_insert map wf]
 
-/-- Starting with the native empty map, every finite sequence of these insertions
-has both invariants required by the key/value theorem. -/
-theorem insert_fold_valid_unique [BEq α] [LawfulBEq α] [Hashable α]
-    (bindings : List (α × β)) :
-    let map := bindings.foldl (fun m kv => insert m kv.1 kv.2) Lean.PersistentHashMap.empty
-    Valid map ∧ Unique map.root := by
-  have preserve (xs : List (α × β)) (map : Lean.PersistentHashMap α β)
-      (wf : Valid map) (hu : Unique map.root) :
-      Valid (xs.foldl (fun m kv => insert m kv.1 kv.2) map) ∧
-        Unique (xs.foldl (fun m kv => insert m kv.1 kv.2) map).root := by
-    induction xs generalizing map with
-    | nil => exact ⟨wf, hu⟩
-    | cons kv xs ih => exact ih _ (valid_insert map wf _ _) (unique_insert map wf hu _ _)
-  exact preserve bindings _ valid_empty unique_empty
+-- FIXME: Remove this after bumping to later versions of Lean
+/-- Duplicate-free lists with the same elements have the same length. -/
+private theorem length_eq_of_nodup_of_mem_iff [BEq α] [LawfulBEq α] {l₁ l₂ : List α}
+    (h₁ : l₁.Nodup) (h₂ : l₂.Nodup) (h : ∀ a, a ∈ l₁ ↔ a ∈ l₂) : l₁.length = l₂.length :=
+  (List.perm_iff_count.mpr fun a => by simp only [h₁.count, h₂.count, h a]).length_eq
+
+/-- Insertion adds one key exactly when the key is new. -/
+theorem keyCount_insert [BEq α] [LawfulBEq α] [Hashable α]
+    (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
+    (key : α) (value : β) :
+    keyCount (insert map key value).root =
+      if contains map key then keyCount map.root else keyCount map.root + 1 := by
+  have wf' := valid_insert map wf key value
+  have hnodup := nodup_keyList wf hu
+  have hnodup' := nodup_keyList wf' (unique_insert map wf hu key value)
+  have hmem : ∀ q, q ∈ keyList (insert map key value).root ↔ q = key ∨ q ∈ keyList map.root := by
+    intro q
+    rw [mem_keyList wf' q, mem_keyList wf q]
+    exact mem_insert_iff map wf key q value
+  unfold keyCount
+  split
+  · rename_i hc
+    have hk : key ∈ keyList map.root :=
+      (mem_keyList wf key).mpr ((contains_eq_true_iff map wf key).mp hc)
+    apply length_eq_of_nodup_of_mem_iff hnodup' hnodup
+    intro q
+    rw [hmem]
+    constructor
+    · rintro (rfl | h) <;> assumption
+    · exact Or.inr
+  · rename_i hc
+    have hk : key ∉ keyList map.root := fun h =>
+      hc ((contains_eq_true_iff map wf key).mpr ((mem_keyList wf key).mp h))
+    rw [← List.length_cons]
+    apply length_eq_of_nodup_of_mem_iff hnodup' (List.nodup_cons.mpr ⟨hk, hnodup⟩)
+    intro q
+    rw [hmem, List.mem_cons]
+
+end MainParts
 
 end HAMTVerify

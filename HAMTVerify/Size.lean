@@ -1,6 +1,6 @@
 module
 
-public import HAMTVerify.InsertProofs
+public import HAMTVerify.Basic
 import all Lean.Data.PersistentHashMap
 
 @[expose] public section
@@ -94,7 +94,7 @@ theorem DistinctKeys.nodup_toList {keys : Array α} (h : DistinctKeys keys) :
 
 /-- A concatenation has no duplicates when no part has, and `slotOf` sends the elements
 of the part at position `i` to `offset + i`. -/
-theorem nodup_flatMap_of_slots {γ : Type w} {δ : Type x} (f : γ → List δ) (slotOf : δ → Nat) :
+private theorem nodup_flatMap_of_slots {γ : Type w} {δ : Type x} (f : γ → List δ) (slotOf : δ → Nat) :
     ∀ (l : List γ) (offset : Nat), (∀ x ∈ l, (f x).Nodup) →
       (∀ (i : Nat) (hi : i < l.length) (k : δ), k ∈ f l[i] → slotOf k = offset + i) →
       (l.flatMap f).Nodup
@@ -140,46 +140,9 @@ theorem nodup_keyList {hashAt : α → USize} {node : Node α β} (wf : WellForm
         exact routing i hi k ((mem_entryKeyList fun c hc =>
           mem_keyList (children i hi c hc) k).mp hk)
 
-/-- Duplicate-free lists with the same elements have the same length. -/
-theorem length_eq_of_nodup_of_mem_iff [BEq α] [LawfulBEq α] {l₁ l₂ : List α}
-    (h₁ : l₁.Nodup) (h₂ : l₂.Nodup) (h : ∀ a, a ∈ l₁ ↔ a ∈ l₂) : l₁.length = l₂.length :=
-  (List.perm_iff_count.mpr fun a => by simp only [h₁.count, h₂.count, h a]).length_eq
-
 theorem keyCount_empty_root [BEq α] [Hashable α] :
     keyCount (Lean.PersistentHashMap.empty : Lean.PersistentHashMap α β).root = 0 := by
   simp [keyCount, Lean.PersistentHashMap.empty, mkEmptyEntriesArray, keyList_entries,
     List.flatMap_replicate, entryKeyList]
-
-/-- Insertion adds one key exactly when the key is new. -/
-theorem keyCount_insert [BEq α] [LawfulBEq α] [Hashable α]
-    (map : Lean.PersistentHashMap α β) (wf : Valid map) (hu : Unique map.root)
-    (key : α) (value : β) :
-    keyCount (insert map key value).root =
-      if contains map key then keyCount map.root else keyCount map.root + 1 := by
-  have wf' := valid_insert map wf key value
-  have hnodup := nodup_keyList wf hu
-  have hnodup' := nodup_keyList wf' (unique_insert map wf hu key value)
-  have hmem : ∀ q, q ∈ keyList (insert map key value).root ↔ q = key ∨ q ∈ keyList map.root := by
-    intro q
-    rw [mem_keyList wf' q, mem_keyList wf q]
-    exact mem_insert_iff map wf key q value
-  unfold keyCount
-  split
-  · rename_i hc
-    have hk : key ∈ keyList map.root :=
-      (mem_keyList wf key).mpr ((contains_eq_true_iff map wf key).mp hc)
-    apply length_eq_of_nodup_of_mem_iff hnodup' hnodup
-    intro q
-    rw [hmem]
-    constructor
-    · rintro (rfl | h) <;> assumption
-    · exact Or.inr
-  · rename_i hc
-    have hk : key ∉ keyList map.root := fun h =>
-      hc ((contains_eq_true_iff map wf key).mpr ((mem_keyList wf key).mp h))
-    rw [← List.length_cons]
-    apply length_eq_of_nodup_of_mem_iff hnodup' (List.nodup_cons.mpr ⟨hk, hnodup⟩)
-    intro q
-    rw [hmem, List.mem_cons]
 
 end HAMTVerify

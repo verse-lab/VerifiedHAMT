@@ -1,6 +1,6 @@
 module
 
-public import HAMTVerify.Size
+public import HAMTVerify.InsertProofs
 public import HAMTVerify.ContainsThenInsert
 import all Lean.Data.PersistentHashMap
 

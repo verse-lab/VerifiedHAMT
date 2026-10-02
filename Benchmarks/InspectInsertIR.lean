@@ -12,7 +12,7 @@ run_meta do
       ``Lean.PersistentHashMap.insertAtCollisionNodeAux,
       ``HAMTVerify.insert, ``HAMTVerify.insertNode, ``HAMTVerify.insertNoExpand,
       ``HAMTVerify.insertAt, ``HAMTVerify.insertEntries, ``HAMTVerify.rebuild,
-      ``HAMTVerify.insertNodeCached, ``HAMTVerify.insertCollision,
+      ``HAMTVerify.insertNodeCached, ``HAMTVerify.insertCollisionAux,
       ``HAMTVerify.insertEntriesCached, ``HAMTVerify.rebuildCached] do
     if (IR.findEnvDecl env name).isNone then
       throwError "No compiler IR found for {name}"

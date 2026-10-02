@@ -1,5 +1,6 @@
 import HAMTVerify
 import HAMTVerifyTests.Insert
+import HAMTVerifyTests.ModifyIR
 import HAMTVerifyTests.MapIR
 import HAMTVerifyTests.SetIR
 
@@ -27,9 +28,9 @@ example (hashAt : Nat → USize) (key : Nat) :
   simp [or_comm]
 
 -- The suffix specification includes the empty suffix and out-of-range offsets.
-example : containsAt #[2, 7, 2] 1 2 = true := by simp [containsAt]
-example : containsAt #[2, 7, 2] 3 2 = false := by simp [containsAt]
-example : containsAt #[2, 7, 2] 20 2 = false := by simp [containsAt]
+example : (#[2, 7, 2].drop 1).contains 2 = true := by simp
+example : (#[2, 7, 2].drop 3).contains 2 = false := by simp
+example : (#[2, 7, 2].drop 20).contains 2 = false := by simp
 
 -- Membership is independent of routing. A misplaced key is genuinely present,
 -- but traversal can miss it; the validity hypothesis cannot simply be dropped.

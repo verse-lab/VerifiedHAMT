@@ -17,13 +17,6 @@ open Lean.PersistentHashMap
 
 variable {α : Type u} {β : Type v}
 
-/-- The native collision scan, with a decreasing number of remaining keys. -/
-def containsAt [BEq α] (keys : Array α) (i : Nat) (key : α) : Bool :=
-  if h : i < keys.size then
-    if key == keys[i] then true else containsAt keys (i + 1) key
-  else false
-termination_by keys.size - i
-
 /--
 The native hash-directed traversal, with structural termination. The explicit
 bounds check returns `false` on a malformed short entries array; on valid nodes
@@ -31,7 +24,9 @@ the selected slot is in bounds. Values are irrelevant to membership.
 -/
 def containsNode [BEq α] (node : Node α β) (hash : USize) (key : α) : Bool :=
   match node with
-  | .collision keys _ _ => containsAt keys 0 key
+  -- NOTE: `contains` uses `Array.any`, which in turn uses `Array.anyM`,
+  -- which seems optimized?
+  | .collision keys _ _ => keys.contains key
   | .entries es =>
     let i := slot hash
     if hi : i < es.size then
@@ -47,6 +42,7 @@ decreasing_by
   simp at h ⊢
   omega
 
+-- FIXME: Should not repeat
 /-- A lookup equation without the termination proof's dependent match. -/
 theorem containsNode_entries [BEq α] (es : Array (Entry α β (Node α β)))
     (hash : USize) (key : α) :
@@ -66,47 +62,15 @@ theorem containsNode_entries [BEq α] (es : Array (Entry α β (Node α β)))
 def contains [BEq α] [Hashable α] (map : Lean.PersistentHashMap α β) (key : α) : Bool :=
   containsNode map.root (hash key).toUSize key
 
-/-- The scan succeeds exactly when the key occurs in the unscanned suffix. -/
-theorem containsAt_eq_true_iff [BEq α] [LawfulBEq α] (keys : Array α) (i : Nat)
-    (key : α) :
-    containsAt keys i key = true ↔
-      ∃ (j : Nat) (hj : j < keys.size), i ≤ j ∧ keys[j] = key := by
-  rw [containsAt]
-  split
-  · rename_i hi
-    by_cases hk : key = keys[i]
-    · simp only [hk, BEq.rfl, ↓reduceIte, true_iff]
-      exact ⟨i, hi, Nat.le_refl _, rfl⟩
-    · have hbeq : (key == keys[i]) = false := by simp [hk]
-      simp only [hbeq, Bool.false_eq_true, ↓reduceIte]
-      rw [containsAt_eq_true_iff keys (i + 1) key]
-      constructor
-      · rintro ⟨j, hj, hij, heq⟩
-        exact ⟨j, hj, by omega, heq⟩
-      · rintro ⟨j, hj, hij, heq⟩
-        have hne : i ≠ j := by
-          intro h
-          subst j
-          exact hk heq.symm
-        exact ⟨j, hj, by omega, heq⟩
-  · rename_i hi
-    simp only [Bool.false_eq_true, false_iff, not_exists]
-    intro j hj h
-    omega
-termination_by keys.size - i
-
-@[scoped simp] theorem containsAt_zero_eq_true_iff [BEq α] [LawfulBEq α]
-    (keys : Array α) (key : α) : containsAt keys 0 key = true ↔ key ∈ keys := by
-  simp [containsAt_eq_true_iff, Array.mem_iff_getElem]
-
 /-- A successful query cannot invent a key, even in a malformed node. -/
 theorem containsNode_sound [BEq α] [LawfulBEq α] (node : Node α β)
     (hash : USize) (key : α) (found : containsNode node hash key = true) :
     HasKey key node := by
   cases node with
   | collision keys vals hsz =>
-    exact HasKey.collision ((containsAt_zero_eq_true_iff keys key).mp
-      (by simpa only [containsNode] using found))
+    rw [hasKey_collision]
+    simp [containsNode] at found
+    exact found
   | entries es =>
     by_cases hi : slot hash < es.size
     · rw [containsNode, dif_pos hi] at found
@@ -140,13 +104,7 @@ theorem containsNode_complete [BEq α] [LawfulBEq α] {hashAt : α → USize}
     have hslot := routing i hi key hkey
     subst i
     rw [containsNode, dif_pos hi]
-    cases he : es[slot (hashAt key)] with
-    | null => simp [he, EntryHasKey] at hkey
-    | entry key' value =>
-      have heq : key = key' := by simpa [he, EntryHasKey] using hkey
-      simp [heq]
-    | ref child =>
-      exact ih _ hi child he (by simpa [he, EntryHasKey] using hkey)
+    cases he : es[slot (hashAt key)] <;> simp [EntryHasKey] at * <;> grind
 
 theorem containsNode_eq_true_iff [BEq α] [LawfulBEq α] {hashAt : α → USize}
     {node : Node α β} (wf : WellFormed hashAt node) (key : α) :
