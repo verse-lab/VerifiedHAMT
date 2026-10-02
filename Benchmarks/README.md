@@ -2,8 +2,10 @@
 
 Tools for comparing HAMTVerify's map and set operations with Lean's native
 implementations. See the [project README](../README.md) for the APIs and
-correctness theorems. Run the paired benchmarks on each target machine; this
-document does not prescribe a fixed performance baseline.
+correctness theorems, and [docs/Implementation.md](../docs/Implementation.md) for
+the design of the measured code and recorded tuning results. Run the paired
+benchmarks on each target machine; this document does not prescribe a fixed
+performance baseline.
 
 ## Run
 
