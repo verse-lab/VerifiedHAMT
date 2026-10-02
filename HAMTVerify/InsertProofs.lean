@@ -1,4 +1,10 @@
-import HAMTVerify.InsertCachedProofs
+module
+
+public import HAMTVerify.InsertCachedProofs
+import all Lean.Data.PersistentHashMap
+import all Init.Data.Array.Basic
+
+@[expose] public section
 
 namespace HAMTVerify
 

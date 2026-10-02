@@ -1,5 +1,11 @@
-import HAMTVerify.Map
-import Lean.Data.PersistentHashSet
+module
+
+public import HAMTVerify.Map
+public import Lean.Data.PersistentHashSet
+import all Lean.Data.PersistentHashMap
+import all Lean.Data.PersistentHashSet
+
+@[expose] public section
 
 /-!
 A verified persistent set backed by `Map α Unit`, following the representation
@@ -69,7 +75,7 @@ instance [LawfulBEq α] (set : Set α) (key : α) : Decidable (key ∈ set) :=
 @[scoped simp] theorem empty_eq_emptyc : (empty : Set α) = ∅ := rfl
 
 @[scoped simp] theorem toRaw_empty :
-    (∅ : Set α).toRaw = Lean.PersistentHashSet.empty := rfl
+    (∅ : Set α).toRaw = Lean.PersistentHashSet.empty := (rfl)
 
 @[scoped simp] theorem toMap_insert [LawfulBEq α] (set : Set α) (key : α) :
     (set.insert key).toMap = set.toMap.insert key () := rfl

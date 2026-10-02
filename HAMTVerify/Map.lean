@@ -1,4 +1,9 @@
-import HAMTVerify.InsertProofs
+module
+
+public import HAMTVerify.InsertProofs
+import all Lean.Data.PersistentHashMap
+
+@[expose] public section
 
 /-!
 A persistent map with bundled routing and uniqueness invariants, analogous to
@@ -28,9 +33,14 @@ variable {α : Type u} {β : Type v} [BEq α] [Hashable α]
     (valid : Valid raw) (unique : Unique raw.root) : Map α β :=
   ⟨raw, valid, unique⟩
 
+/-- `unique_empty`, stated for the root of the native empty map: the body of `empty` below
+is exposed, so it cannot unfold the unexposed `Lean.PersistentHashMap.empty` itself. -/
+theorem unique_empty_root : Unique (Lean.PersistentHashMap.empty : Lean.PersistentHashMap α β).root :=
+  unique_empty
+
 /-- The empty map; also written `∅` or `{}`. -/
 @[inline] def empty : Map α β :=
-  ⟨Lean.PersistentHashMap.empty, valid_empty, unique_empty⟩
+  ⟨Lean.PersistentHashMap.empty, valid_empty, unique_empty_root⟩
 
 instance : EmptyCollection (Map α β) := ⟨empty⟩
 instance : Inhabited (Map α β) := ⟨∅⟩

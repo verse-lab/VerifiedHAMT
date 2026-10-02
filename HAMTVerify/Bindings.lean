@@ -1,4 +1,9 @@
-import HAMTVerify.Basic
+module
+
+public import HAMTVerify.Basic
+import all Lean.Data.PersistentHashMap
+
+@[expose] public section
 
 /-! Structural key/value membership and the additional invariant needed for updates. -/
 

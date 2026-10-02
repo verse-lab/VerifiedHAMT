@@ -1,4 +1,9 @@
-import HAMTVerify.Insert
+module
+
+public import HAMTVerify.Insert
+import all Lean.Data.PersistentHashMap
+
+@[expose] public section
 /-! Kernel-checked equivalence between the cached-hash insertion and our
 original total algorithm. This does not assert equality with upstream partial
 constants. The offset bound handles both 32-bit and 64-bit USize semantics. -/

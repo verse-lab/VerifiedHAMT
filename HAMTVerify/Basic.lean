@@ -1,5 +1,10 @@
-import Lean.Data.PersistentHashMap
-import Std
+module
+
+public import Lean.Data.PersistentHashMap
+public import Std
+import all Lean.Data.PersistentHashMap
+
+@[expose] public section
 
 /-!
 Structural specifications for Lean's existing persistent hash map representation.

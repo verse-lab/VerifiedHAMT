@@ -1,4 +1,9 @@
-import HAMTVerify.Basic
+module
+
+public import HAMTVerify.Basic
+import all Lean.Data.PersistentHashMap
+
+@[expose] public section
 
 /-!
 A total counterpart of `Lean.PersistentHashMap.contains`, on the native node

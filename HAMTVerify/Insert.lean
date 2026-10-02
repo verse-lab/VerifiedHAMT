@@ -1,5 +1,10 @@
-import HAMTVerify.Contains
-import HAMTVerify.Bindings
+module
+
+public import HAMTVerify.Contains
+public import HAMTVerify.Bindings
+import all Lean.Data.PersistentHashMap
+
+@[expose] public section
 
 /-! Total insertion, including collision-bucket promotion at the native threshold. -/
 
