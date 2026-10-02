@@ -1,7 +1,7 @@
 import HAMTVerify
-import Tests.Insert
-import Tests.MapIR
-import Tests.SetIR
+import HAMTVerifyTests.Insert
+import HAMTVerifyTests.MapIR
+import HAMTVerifyTests.SetIR
 
 /-!
 Kernel-checked examples and executable comparisons against the upstream partial

@@ -137,20 +137,20 @@ def main():
     spec = importlib.util.spec_from_file_location("contains_inspection", root / "Benchmarks/inspect.py")
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
-    subprocess.run(["lake", "build", "setContainsBench", "setInsertBench", "Tests.SetIR"], cwd=root, check=True)
+    subprocess.run(["lake", "build", "setContainsBench", "setInsertBench", "HAMTVerifyTests.SetIR"], cwd=root, check=True)
     # Re-run the imported-entry-point comparison even when Lake's cache is warm.
-    subprocess.run(["lake", "env", "lean", "Tests/SetIR.lean"], cwd=root, check=True)
+    subprocess.run(["lake", "env", "lean", "HAMTVerifyTests/SetIR.lean"], cwd=root, check=True)
     lean = subprocess.check_output(["lake", "env", "lean", "--version"], cwd=root, text=True).strip()
     ir = subprocess.check_output(["lake", "env", "lean", "Benchmarks/InspectSetIR.lean"], cwd=root, text=True)
     (output / "set.ir.txt").write_text(ir)
-    files = ["HAMTVerify.lean", "lean-toolchain", "lakefile.toml", "Tests/Set.lean", "Tests/SetIR.lean",
+    files = ["HAMTVerify.lean", "lean-toolchain", "lakefile.toml", "HAMTVerifyTests/Set.lean", "HAMTVerifyTests/SetIR.lean",
              "Benchmarks/InspectSetIR.lean", "Benchmarks/inspect_set.py", "Benchmarks/inspect.py",
              "Benchmarks/SetContains.lean", "Benchmarks/SetInsert.lean"]
     files += [str(path.relative_to(root)) for path in sorted((root / "HAMTVerify").glob("*.lean"))]
     metadata = {
         "lean": lean,
         "source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in files},
-        "set_vs_verified_raw_map_ir_check": "Tests/SetIR.lean passed (Nat insert and contains, declaration names normalized)",
+        "set_vs_verified_raw_map_ir_check": "HAMTVerifyTests/SetIR.lean passed (Nat insert and contains, declaration names normalized)",
         "benchmarks": {stem: inspect(root, output, helper, stem, lean) for stem in ("SetContains", "SetInsert")},
     }
     (output / "set-compiler.json").write_text(json.dumps(metadata, indent=2) + "\n")

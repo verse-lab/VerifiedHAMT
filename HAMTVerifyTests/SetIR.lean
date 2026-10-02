@@ -1,5 +1,5 @@
 import Lean
-import Tests.Set
+import HAMTVerifyTests.Set
 
 /-! Check erasure of the Set and Map wrappers and invariant proofs. This is a
 compiler regression check against our total map operations, not an equivalence

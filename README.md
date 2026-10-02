@@ -46,16 +46,16 @@ for raw-map proofs. The wrapper exposes the currently verified operations;
 value lookup and deletion are still outside the verified API.
 
 The proof fields are erased and the wrapper has a single runtime data field.
-On Lean 4.32.0, the paired Nat insertion and lookup entry points in `Tests/Map.lean`
+On Lean 4.32.0, the paired Nat insertion and lookup entry points in `HAMTVerifyTests/Map.lean`
 compile to identical IR signatures and bodies, including ownership annotations,
-and call the same specialized functions in generated C. `Tests/MapIR.lean`
+and call the same specialized functions in generated C. `HAMTVerifyTests/MapIR.lean`
 checks this as part of `lake test`. Thus this compiler check finds no extra
 wrapper allocation or proof computation for those entry points; it is not a
 universal wall-clock performance theorem. Reproduce the IR check with:
 
 ```sh
 lake test
-lake env lean Tests/MapIR.lean
+lake env lean HAMTVerifyTests/MapIR.lean
 ```
 
 ## Bundled set API
@@ -104,7 +104,7 @@ tree; importing native data requires the invariant proofs for `raw.set`.
 Set operations delegate to the verified map operations. The native set's
 opaque insertion and query are used only as runtime test oracles.
 
-`Tests/SetIR.lean` compares bundled Nat insertion/query entry points against
+`HAMTVerifyTests/SetIR.lean` compares bundled Nat insertion/query entry points against
 the verified map operations on native set representations. Their compiled IR
 signatures and bodies are identical after ignoring declaration names, including
 ownership annotations. This check is part of `lake test`; it does not assert
@@ -283,10 +283,10 @@ machine to evaluate performance with its hardware and toolchain.
 - `HAMTVerify/Map.lean`: bundled map type, invariant-preserving API, and laws without invariant premises.
 - `HAMTVerify/Set.lean`: verified set interface backed by `Map α Unit` and scoped membership laws.
 - `HAMTVerify/InsertProofs.lean`: insertion invariants, membership and value-update proofs.
-- `Tests/Contains.lean`: proof examples, axiom checks, and executable comparisons.
-- `Tests/Insert.lean`: insertion proof examples, axiom checks, and regression tests.
-- `Tests/Map.lean`: bundled API examples, axiom checks, and executable regressions.
-- `Tests/MapIR.lean`: compiler check that the bundled API adds no overhead to the tested entry points.
-- `Tests/Set.lean`: set API proofs, axiom checks, and regression tests.
-- `Tests/SetIR.lean`: compiler check for erasure of the set and map wrappers.
+- `HAMTVerifyTests/Contains.lean`: proof examples, axiom checks, and executable comparisons.
+- `HAMTVerifyTests/Insert.lean`: insertion proof examples, axiom checks, and regression tests.
+- `HAMTVerifyTests/Map.lean`: bundled API examples, axiom checks, and executable regressions.
+- `HAMTVerifyTests/MapIR.lean`: compiler check that the bundled API adds no overhead to the tested entry points.
+- `HAMTVerifyTests/Set.lean`: set API proofs, axiom checks, and regression tests.
+- `HAMTVerifyTests/SetIR.lean`: compiler check for erasure of the set and map wrappers.
 - [Benchmarks/](Benchmarks/README.md): benchmark workloads, runner, and compiler inspection.

@@ -1,5 +1,5 @@
 import Lean
-import Tests.Map
+import HAMTVerifyTests.Map
 
 /-!
 Compiler regression check, not a logical theorem: after proof erasure and

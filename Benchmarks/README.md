@@ -74,7 +74,7 @@ actual benchmark specializations. They check clock/batch ordering and retain
 traversal code for review. Insertion inspection checks the cached traversal for
 closure allocation and indirect calls; set inspection also checks that the
 varying insertion rounds remain in the loop. The set inspector reruns
-[Tests/SetIR.lean](../Tests/SetIR.lean) to compare wrapper and raw verified entry
+[HAMTVerifyTests/SetIR.lean](../HAMTVerifyTests/SetIR.lean) to compare wrapper and raw verified entry
 points after proof erasure.
 
 Assembly is generated from Lake's actual C compilation command by replacing

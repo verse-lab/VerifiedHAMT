@@ -7,12 +7,12 @@ testDriver = "containsTests"
 name = "HAMTVerify"
 
 [[lean_lib]]
-name = "Tests"
-globs = ["Tests.+"]
+name = "HAMTVerifyTests"
+globs = ["HAMTVerifyTests.+"]
 
 [[lean_exe]]
 name = "containsTests"
-root = "Tests.Contains"
+root = "HAMTVerifyTests.Contains"
 
 [[lean_exe]]
 name = "containsBench"
