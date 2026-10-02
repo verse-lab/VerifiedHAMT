@@ -10,41 +10,6 @@ import all Lean.Data.PersistentHashMap
 
 namespace HAMTVerify
 
-namespace Array
-
-@[inline]
-unsafe def modifyInBoundWithCallBackProofUnsafe (xs : Array α) (i : Nat) (f : (x : α) → x ∈ xs → α) (h_lt : i < xs.size) : Array α :=
-  let v                := xs[i]'h_lt
-  -- Replace a[i] by `box(0)`.  This ensures that `v` remains unshared if possible.
-  -- Note: we assume that arrays have a uniform representation irrespective
-  -- of the element type, and that it is valid to store `box(0)` in any array.
-  let xs'               := xs.set i (unsafeCast ()) h_lt
-  let v := f v (Array.getElem_mem h_lt)
-  xs'.set i v (Nat.lt_of_lt_of_eq h_lt (Array.size_set ..).symm)
-
--- NOTE: Native `Array.modify` gives its callback only a value, without proof
--- that it came from the array. The extra membership argument lets recursive
--- callers prove that a selected child is smaller; it is erased at runtime.
-@[implemented_by modifyInBoundWithCallBackProofUnsafe]
-def modifyInBoundWithCallBackProof (xs : Array α) (i : Nat) (f : (x : α) → x ∈ xs → α) (h_lt : i < xs.size) : Array α :=
-  let v := xs[i]'h_lt
-  xs.set i (f v (Array.getElem_mem h_lt)) h_lt
-
-@[inline]
-def modifyWithCallBackProof (xs : Array α) (i : Nat) (f : (x : α) → x ∈ xs → α) : Array α :=
-  if h_lt : i < xs.size then modifyInBoundWithCallBackProof xs i f h_lt else xs
-
-theorem size_modifyInBoundWithCallBackProof {xs : Array α} {i : Nat} {f : (x : α) → x ∈ xs → α} {h_lt : i < xs.size} :
-  (modifyInBoundWithCallBackProof xs i f h_lt).size = xs.size := by
-  simp only [modifyInBoundWithCallBackProof, Array.size_set]
-
-theorem size_modifyWithCallBackProof {xs : Array α} {i : Nat} {f : (x : α) → x ∈ xs → α} :
-  (modifyWithCallBackProof xs i f).size = xs.size := by
-  simp only [modifyWithCallBackProof]
-  split ; apply size_modifyInBoundWithCallBackProof ; rfl
-
-end Array
-
 open Lean.PersistentHashMap
 
 variable {α : Type u} {β : Type v}
@@ -82,11 +47,37 @@ proof that the child is referenced by the original entries array. -/
     (childInsert : (child : Node α β) → .ref child ∈ es → USize → α → β → Node α β)
     (h : USize) (key : α) (value : β) :
     Array (Entry α β (Node α β)) :=
-  Array.modifyWithCallBackProof es (slot h) fun
-    | .null, _ => .entry key value
-    | .entry k v, _ => if key == k then .entry key value
-        else .ref (mkCollisionNode k v key value)
-    | .ref child, hmem => .ref (childInsert child hmem (nextHash h) key value)
+  let i := slot h
+  if hi : i < es.size then
+    let old := es[i]
+    -- NOTE: Clearing the slot before the recursive call leaves the child unshared
+    -- whenever the array was, so the child can be updated in place. Every arm
+    -- writes into the cleared array: in this shape the compiler keeps the
+    -- clearing write before the recursion, which `HAMTVerifyTests/ReleaseIR.lean` checks.
+    let es' := es.set i .null
+    have hi' : i < es'.size := by simpa [es'] using hi
+    match he : old with
+    | .null => es'.set i (.entry key value) hi'
+    | .entry k v =>
+      if key == k then es'.set i (.entry key value) hi'
+      else es'.set i (.ref (mkCollisionNode k v key value)) hi'
+    | .ref child =>
+      es'.set i (.ref (childInsert child (he ▸ Array.getElem_mem hi) (nextHash h) key value)) hi'
+  else es
+
+/-- Logically, `insertEntries` writes one entry into the selected slot; the
+clearing write only matters at runtime. -/
+theorem insertEntries_eq [BEq α] (es : Array (Entry α β (Node α β)))
+    (childInsert : (child : Node α β) → .ref child ∈ es → USize → α → β → Node α β)
+    (h : USize) (key : α) (value : β) (hi : slot h < es.size) :
+    insertEntries es childInsert h key value =
+      es.set (slot h) (match es[slot h], Array.getElem_mem hi with
+        | .null, _ => .entry key value
+        | .entry k v, _ => if key == k then .entry key value
+            else .ref (mkCollisionNode k v key value)
+        | .ref child, hmem => .ref (childInsert child hmem (nextHash h) key value)) hi := by
+  simp only [insertEntries, dif_pos hi]
+  split <;> split <;> (try split) <;> simp_all
 
 -- A special path for insertion below the depth limit
 -- NOTE: The promotion limit does not bound the depth of an existing input tree.

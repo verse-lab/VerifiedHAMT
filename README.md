@@ -101,9 +101,9 @@ in the `HAMTVerify` namespace apply to any native map, taking `Valid` and `Uniqu
 as hypotheses; the membership results need only `Valid`.
 
 The proofs depend only on the axioms `propext`, `Classical.choice`, and
-`Quot.sound`, which the tests check. They use no `sorry`, `native_decide`, or
-`implemented_by`. Optimized executable code is proved equal to simpler models,
-and two of these equalities serve as `@[csimp]` rewrites.
+`Quot.sound`, which the tests check, and use no `sorry`, `native_decide`, or
+`implemented_by`. Sized insertion and the fused `containsThenInsert` are proved
+equal to simple specifications and installed as `@[csimp]` rewrites.
 
 ## Scope
 
@@ -122,9 +122,9 @@ lake build
 lake test
 ```
 
-`lake test` checks proof examples, axiom dependencies, and the compiled IR of the
-bundled API. It also compares the verified operations with upstream and with list
-models under several hash functions, including a constant one.
+`lake test` checks proof examples, axiom dependencies, and compiled IR. It also
+compares the verified operations with upstream and with list models under several
+hash functions, including a constant one.
 
 ## Documentation
 
@@ -139,12 +139,12 @@ models under several hash functions, including a constant one.
 
 | Path | Contents |
 | --- | --- |
-| `HAMTVerify/Basic.lean` | structural membership, `Valid`, empty map |
+| `HAMTVerify/Basic.lean` | structural membership and bindings, `Valid`, `Unique`, empty map |
 | `HAMTVerify/Size.lean` | structural key list and count |
 | `HAMTVerify/Contains.lean` | total `contains` and its correctness proofs |
-| `HAMTVerify/Bindings.lean` | structural key/value bindings, `Unique` |
-| `HAMTVerify/Insert.lean` | total insertion: proof model and cached-hash implementation |
-| `HAMTVerify/InsertProofs.lean` | invariant preservation, membership and binding laws |
+| `HAMTVerify/Bindings.lean` | `Updated` and lemmas for replacing an entries slot |
+| `HAMTVerify/Insert.lean` | total insertion with cached hashes |
+| `HAMTVerify/InsertProofs.lean` | invariant preservation; membership, binding, and key-count laws |
 | `HAMTVerify/InsertSized.lean` | insertion that also updates the size |
 | `HAMTVerify/ContainsThenInsert.lean` | fused membership test and insertion |
 | `HAMTVerify/Map.lean`, `HAMTVerify/Set.lean` | bundled APIs |

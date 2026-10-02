@@ -40,7 +40,7 @@ example : ¬ Unique duplicates := by
 -- An empty or too-short entries array is left unchanged, as by upstream modify.
 -- The successful insertion guarantees require Valid and cannot cover this node.
 example : insertNode 6 0 (.entries #[] : Node Nat Nat) 0 7 70 = .entries #[] := by
-  simp [insertNode, insertEntries, Array.modifyWithCallBackProof]
+  simp [insertNode, insertEntries]
 
 -- Neither a depth-limit collision nor the key/value arrays require Inhabited β.
 example [BEq α] [LawfulBEq α] (k : α) (v : β) (hashAt : α → USize) :

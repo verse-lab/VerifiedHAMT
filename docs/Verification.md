@@ -32,17 +32,15 @@ theorem contains_eq_true_iff (map : Lean.PersistentHashMap α β) (wf : Valid ma
     contains map key = true ↔ Mem key map
 ```
 
-It needs neither unique keys nor collision-free hashes. Termination of `contains`
-follows from the number of remaining collision keys and the structural size of
-nodes. The development also proves:
+It needs neither unique keys nor collision-free hashes. `containsNode` recurses on
+the size of the node and searches a collision node with `Array.contains`. The
+development also proves:
 
 - Soundness without `Valid`: a successful query found a stored key
   (`containsNode_sound`).
 - Completeness under `Valid` (`containsNode_complete`), and hence
   `contains_eq_false_iff`. A test shows that `Valid` cannot be dropped: a
   misplaced key is stored but missed by the traversal.
-- A collision scan from any offset agrees with membership in the remaining
-  suffix (`containsAt_eq_true_iff`).
 - Hash-selected indices are in bounds for well-formed entries arrays
   (`slot_lt_branching`, `WellFormed.slot_lt`).
 - The native empty map is `Valid` and contains no keys (`valid_empty`,
@@ -63,7 +61,6 @@ their original order. The main theorems are in `InsertProofs.lean`:
 | `contains_insert` | `contains (insert m k v) q = ((q == k) \|\| contains m q)` | `Valid m` |
 | `unique_insert` | `Unique (insert m k v).root` | `Valid m`, `Unique m.root` |
 | `mapsTo_insert_iff` | `MapsTo q w (insert m k v) ↔ (q = k ∧ w = v) ∨ (q ≠ k ∧ MapsTo q w m)` | `Valid m`, `Unique m.root` |
-| `insert_fold_valid_unique` | inserting any list of bindings into the empty map yields both invariants | none |
 
 `mapsTo_insert_self` and `mapsTo_insert_of_ne` specialize the binding law to the
 inserted key and to the other keys. `HasBinding.functional` shows that
@@ -71,16 +68,20 @@ inserted key and to the other keys. `HasBinding.functional` shows that
 
 **The binding law needs `Unique`.** If a valid bucket contains duplicate keys,
 promotion can let a later duplicate overwrite the newly inserted value; the tests
-include this case. `valid_insert` and `mem_insert_iff` hold even then. Maps built
-only with the verified insertion satisfy both invariants
-(`insert_fold_valid_unique`), and the bundled `Map` carries them.
+include this case. `valid_insert` and `mem_insert_iff` hold even then. The
+bundled `Map` carries both invariants, maintained by `valid_insert` and
+`unique_insert`, so its theorems need neither as a hypothesis.
 
-Termination is proved in stages. Collision scans and rebuilding decrease the
-number of unprocessed array entries, and node insertion decreases the number of
-remaining promotion levels. At zero levels, `insertNoExpand` still descends
-existing children by structural recursion and inserts, so no case drops an
-insertion when the level count runs out, and trees deeper than the promotion
-limit are handled.
+Termination is proved in stages. The collision scan (`insertCollisionAux`) and
+`rebuild` decrease the number of unprocessed collision entries, and `insertNode`
+decreases the number of remaining promotion levels. At zero levels,
+`insertNoExpand` still descends existing children and inserts, so no case drops
+an insertion when the level count runs out, and trees deeper than the promotion
+limit are handled. Its recursion decreases `sizeOf node`: `insertEntries` passes
+the child callback a proof that the child is an element of the entries array.
+`insertEntries` clears the selected slot before writing the new entry, a runtime
+detail (see [Implementation.md](Implementation.md#insertion-traversal)); by
+`insertEntries_eq`, the result is logically a single write.
 
 On a malformed entries array that is too short for the selected slot, `insert`
 leaves the array unchanged, like upstream's `Array.modify`, and `contains`
@@ -91,28 +92,30 @@ returns `false`. The success guarantees assume `Valid`.
 `keyList` lists the keys stored in a node, and `keyCount` is its length
 (`Size.lean`). Under `Valid` and `Unique` the list contains exactly the stored
 keys (`mem_keyList`) without duplicates (`nodup_keyList`), so `keyCount` is the
-number of distinct keys. `keyCount_insert` shows that insertion adds one exactly
-when the key is new. The bundled `Map` caches this number, with the invariant
+number of distinct keys. `keyCount_insert` (`InsertProofs.lean`) shows that
+insertion adds one exactly when the key is new. The bundled `Map` caches this number, with the invariant
 `size = keyCount toRaw.root`.
 
-## Executable code and proof models
+## Executable code
 
-The theorems are proved about simple models; the executable code is proved equal
-to them. These equalities need no `Valid`, `Unique`, or `LawfulBEq` premise:
+The insertion theorems are proved directly about the executable `insertNode`,
+which receives the remaining hash and the number of hash bits already consumed
+(`offset`) as machine words. At a node, the invariant is
+`WellFormed (fun k => (hash k).toUSize >>> offset)`. The lemmas
+`hash_shift_offset` and `offset_add_shift` relate this arithmetic to `nextHash`
+on both 32-bit and 64-bit `USize`, provided `offset + 5 * levels ≤ 30`, which
+holds at the root.
 
-- `insert_root_eq` and `insertNodeCached_eq` (`InsertCachedProofs.lean`): the
-  cached-hash `insert` equals the proof model `insertNode`, for both 32-bit and
-  64-bit `USize` and for existing trees deeper than the promotion limit.
-  `insertCollision_eq` relates the direct collision-node update to the bucket
-  model.
+Two fast paths are proved equal to simple specifications, with no `Valid`,
+`Unique`, or `LawfulBEq` premise, and installed as `@[csimp]` rewrites:
+
 - `insertSized_eq_impl` (`InsertSized.lean`): the single traversal that also
   maintains the size equals `insert` together with the conditional size update.
 - `containsThenInsert_eq_impl` (`ContainsThenInsert.lean`): the fused operation
   equals `contains` followed by `insert`.
 
-The last two are `@[csimp]` theorems: compiled code uses the implementation,
-while proofs unfold the specification. [Implementation.md](Implementation.md)
-explains the implementations.
+Compiled code uses the implementations, while proofs unfold the specifications.
+[Implementation.md](Implementation.md) explains the implementations.
 
 ## Relationship to Lean's implementation
 
@@ -148,7 +151,7 @@ checks below are compiler regression tests, not theorems.
 `lake test` checks the following suites:
 
 - `HAMTVerifyTests/Contains.lean`: proof examples, including duplicate collision
-  keys, suffix boundaries, malformed arrays, and the misplaced-key counterexample.
+  keys, malformed arrays, and the misplaced-key counterexample.
   It compares the verified and upstream `contains` with a list model after every
   insertion, overwrite, and deletion and on retained snapshots, using default,
   identity, shared-prefix, constant, and high-bit hashes.
@@ -170,3 +173,6 @@ checks below are compiler regression tests, not theorems.
   erasure, the bundled `Nat` insertion and lookup compile to the same IR
   signatures and bodies, including ownership annotations, as direct calls on
   `SizedRaw`, ignoring only declaration names.
+- `HAMTVerifyTests/ReleaseIR.lean`: in the compiled insertion traversals, both
+  the generic workers and their `Nat` specializations, every path to a recursive
+  call first clears the entries slot with `Entry.null`.

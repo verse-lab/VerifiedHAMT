@@ -109,8 +109,7 @@ theorem insertEntries_wf_mem [BEq α] [LawfulBEq α]
     · apply wellFormed_set wf _ hi e _ hc
       cases wf <;> grind
     · exact hasKey_set_iff _ hi e key mem
-  simp only [insertEntries, Array.modifyWithCallBackProof, dif_pos hi,
-    Array.modifyInBoundWithCallBackProof]
+  rw [insertEntries_eq _ _ _ _ _ hi]
   split
   · apply finish <;> grind [EntryHasKey]
   · split <;> apply finish <;>
@@ -137,8 +136,7 @@ theorem insertEntries_unique_updated [BEq α] [LawfulBEq α]
       letI res := .entries (es.set (slot (hashAt key)) e)
       Unique res ∧ Updated (.entries es) res key value :=
     ⟨unique_set hu _ hi e hc, updated_set wf key value hi e upd⟩
-  simp only [insertEntries, Array.modifyWithCallBackProof, dif_pos hi,
-    Array.modifyInBoundWithCallBackProof]
+  rw [insertEntries_eq _ _ _ _ _ hi]
   split
   · apply finish <;> grind [EntryHasBinding]
   · split <;> apply finish <;>

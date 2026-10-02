@@ -25,18 +25,41 @@ alone:
 lake env lean HAMTVerifyTests/MapIR.lean
 ```
 
-## Cached-hash insertion
+## Insertion traversal
 
-The proof model `insertNode` takes a hash function and shifts it at every
-descent. The executable `insert` runs `insertNodeCached` instead. It passes the
-remaining hash and the consumed-bit offset down as machine words and recomputes
-hashes only while rebuilding promoted buckets; `@[specialize]` removes the
-indirect calls from the rebuild loop. Entries updates use `Array.modify`, like
-upstream, so the old child reference is released before the child is updated.
-`insertCollision` scans and updates a collision node directly, so its constructor
-can be reused and no intermediate `Bucket` is allocated. `insert_root_eq` proves
-the result equal to the model's; see
-[Verification.md](Verification.md#executable-code-and-proof-models).
+`insert` computes the key's hash once, at the root, and `insertNode` passes the
+remaining hash and the consumed-bit offset down as machine words. Hashes are
+recomputed only while rebuilding promoted buckets, and `@[specialize]` removes
+the indirect calls from the rebuild loop. The theorems are proved about this
+code directly; see [Verification.md](Verification.md#executable-code).
+
+`insertEntries` reads the selected entry, writes `.null` into its slot, and only
+then writes the new entry. Clearing the slot first releases the array's reference
+to the child, so an unshared child stays unshared during the recursive call and
+can be updated in place; core's `Array.modify` achieves the same by storing
+`box(0)`, since it has no value of an arbitrary element type to store. Logically
+the clearing write cancels out (`insertEntries_eq`). The compiler may move a pure
+write after the call, though. In the current shape, where every arm writes into
+the cleared array, it keeps the write first, and `HAMTVerifyTests/ReleaseIR.lean`
+checks this in the compiled traversals. The child callback also receives a proof
+that the child came from the array, which `insertNoExpand` needs for termination.
+`insertCollisionAux` scans and updates a collision node directly, so its
+constructor can be reused.
+
+The refactoring in `f75c455` instead used `Array.modifyWithCallBackProof`, an
+`Array.modify` whose callback also received the membership proof. Through
+`implemented_by`, it ran an unsafe function that stores `box(0)` like core's.
+It was removed for three reasons:
+
+- Its callback could return only the new entry. The sized traversal must also
+  return the count, so it made its recursive call before calling the modifier,
+  while the slot still held the child, and every node below the root was copied.
+- Letting the callback return the count as well did not help. In an experiment,
+  once the callback was inlined, the compiler moved the `box(0)` store after the
+  recursive call.
+- `Entry` has `.null`, so safe code can clear the slot. The unsafe function added
+  to the trusted base without guaranteeing the order, which has to be checked in
+  the compiled code either way.
 
 ## Size maintenance
 
@@ -45,17 +68,17 @@ The native map does not store its size, so `Map` caches it. The specification
 when the key was absent. Its `@[csimp]` theorem makes compiled code use
 `insertSizedImpl`, a single traversal that:
 
-- carries the whole map's count in one `SizedRaw`, reused on descent and return,
-  and changes the count at the insertion site;
-- reconstructs each parent directly in its branch, so the `Node.entries`
-  constructor can be reused too;
+- carries the whole map's count in a `SizedRaw`, returns it together with the
+  updated node, and changes it at the insertion site;
 - at a collision node, compares the array lengths before and after the existing
-  insertion scan, before any promotion rebuild.
+  insertion scan, before any promotion rebuild, which then uses plain
+  `insertNode`.
 
 This avoids a second lookup, a `Bool × Node` result at every level, and any
 conversion at the public entry point, since `Map.insert` passes its own
-`SizedRaw`. The equivalence proof needs no routing, uniqueness, or lawful-equality
-assumption. On malformed short arrays the count follows the membership-based
+`SizedRaw`. `insertSizedEntries` clears the slot before the recursive call in the
+same way as `insertEntries`, so the path is still updated in place. The
+equivalence proof needs no routing, uniqueness, or lawful-equality assumption. On malformed short arrays the count follows the membership-based
 specification, which is the true key count whenever the bundled invariants hold.
 `containsThenInsert` reuses the traversal with an initial count of zero and builds
 its Boolean only at the end. Using `@[csimp]` keeps the logical specification
@@ -76,7 +99,8 @@ leave an existing value unchanged, so it cannot replace the overwriting
 
 ## Size-insertion tuning, 2026-10-02
 
-The current design was reached in three steps:
+The measurements in this section were taken at commit `e2daa26`. The design was
+reached in three steps:
 
 1. Fusing `contains` and `insert` into a traversal returning `Bool × Node` removed
    the second lookup but made insertion slower. Generated C showed a pair
@@ -112,3 +136,8 @@ timings does not remove all measurement noise. The raw reports, source snapshots
 and generated-code evidence are kept locally in the untracked
 `Benchmarks/results/fused-insert-20261002/` and
 `Benchmarks/results/sized-carrier-20261002/` directories.
+
+The refactoring in `f75c455` moved the sized traversal's slot clearing after the
+recursive call, and a pilot then measured set insertion at 2.34× native. With the
+clearing restored before the call, a full evaluation with the settings above
+measured 1.071×.

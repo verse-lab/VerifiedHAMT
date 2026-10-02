@@ -35,19 +35,22 @@ structure SizedRaw (α : Type u) (β : Type v) [BEq α] [Hashable α] where
     (childInsert : (child : Node α β) → .ref child ∈ es →
       Nat → USize → α → β → SizedRaw α β)
     (h : USize) (key : α) (value : β) : SizedRaw α β :=
-  -- NOTE: The pure modifier returns only the array, so the outer match keeps
-  -- the updated size. In the ref case recursion finishes before replacement;
-  -- the original slot still holds the child during that recursive call.
-  if hi : slot h < es.size then
-    let (entry, size) := match he : es[slot h] with
-      | .null => (.entry key value, size + 1)
-      | .entry k v =>
-        if key == k then (.entry key value, size)
-        else (.ref (mkCollisionNode k v key value), size + 1)
-      | .ref child =>
-        let result := childInsert child (he ▸ Array.getElem_mem hi) size (nextHash h) key value
-        (.ref result.toRaw.root, result.size)
-    ⟨⟨.entries (Array.modifyInBoundWithCallBackProof es (slot h) (fun _ _ => entry) hi)⟩, size⟩
+  let i := slot h
+  if hi : i < es.size then
+    let old := es[i]
+    -- NOTE: As in `insertEntries`, clear the slot before the recursive call and
+    -- write every arm into the cleared array, so that an unshared child is updated
+    -- in place. The size travels back with the child's result.
+    let es' := es.set i .null
+    have hi' : i < es'.size := by simpa [es'] using hi
+    match he : old with
+    | .null => ⟨⟨.entries (es'.set i (.entry key value) hi')⟩, size + 1⟩
+    | .entry k v =>
+      if key == k then ⟨⟨.entries (es'.set i (.entry key value) hi')⟩, size⟩
+      else ⟨⟨.entries (es'.set i (.ref (mkCollisionNode k v key value)) hi')⟩, size + 1⟩
+    | .ref child =>
+      let result := childInsert child (he ▸ Array.getElem_mem hi) size (nextHash h) key value
+      ⟨⟨.entries (es'.set i (.ref result.toRaw.root) hi')⟩, result.size⟩
   -- The reference lookup returns false for an invalid slot; preserve its
   -- size specification even though the entries array is left unchanged.
   else ⟨⟨.entries es⟩, size + 1⟩
@@ -149,8 +152,7 @@ theorem insertSizedEntries_eq [BEq α] [Hashable α]
     insertSizedEntries es size childInsert h key value =
       ⟨⟨.entries (insertEntries es childModel h key value)⟩,
         if containsNode (.entries es) h key then size else size + 1⟩ := by
-  simp only [insertSizedEntries, insertEntries, Array.modifyWithCallBackProof,
-    Array.modifyInBoundWithCallBackProof, containsNode_entries]
+  simp only [insertSizedEntries, insertEntries, containsNode_entries]
   split <;> grind
 
 theorem insertSizedNoExpand_eq [BEq α] [Hashable α] (s : SizedRaw α β) (h : USize)

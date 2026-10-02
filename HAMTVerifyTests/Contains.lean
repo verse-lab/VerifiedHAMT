@@ -1,6 +1,6 @@
 import HAMTVerify
 import HAMTVerifyTests.Insert
-import HAMTVerifyTests.ModifyIR
+import HAMTVerifyTests.ReleaseIR
 import HAMTVerifyTests.MapIR
 import HAMTVerifyTests.SetIR
 
