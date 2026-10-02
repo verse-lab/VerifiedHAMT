@@ -54,8 +54,8 @@ Calibration warms both implementations and selects a common batch size targeting
 order. `Runtime.hold` keeps the observed checksum between the clock reads.
 Insertion timing includes allocation, reference counting, snapshot retention,
 result release, and one or two common native lookups per round; the reported
-ns/insert is an amortized workload cost. Verified set insertion also looks each
-key up before inserting it, to maintain the set's size.
+ns/insert is an amortized workload cost. Verified set insertion maintains its size
+along one hash route, reusing the map's runtime container during the traversal.
 
 [run.py](run.py) saves raw samples, per-operation medians, paired elapsed-time
 ratios, per-process median ratios, environment metadata, and source/executable
@@ -73,8 +73,9 @@ timings and ratios depend on hardware, compiler, and workload.
 [inspect_set.py](inspect_set.py) inspect imported Lean IR, generated C, and the
 actual benchmark specializations. They check clock/batch ordering and retain
 traversal code for review. Insertion inspection checks the cached traversal for
-closure allocation and indirect calls; set inspection also checks that the
-varying insertion rounds remain in the loop. The set inspector reruns
+closure allocation and indirect calls; set inspection also checks the sized
+traversal's container and entries-node reuse, the absence of a separate membership
+lookup, and that varying insertion rounds remain in the loop. The set inspector reruns
 [HAMTVerifyTests/SetIR.lean](../HAMTVerifyTests/SetIR.lean) to compare wrapper and raw verified entry
 points after proof erasure.
 

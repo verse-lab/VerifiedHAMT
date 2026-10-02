@@ -67,17 +67,14 @@ example [BEq α] [Hashable α] (map : Map α β) :
 #print axioms Map.length_keys
 
 /-- The runtime data of `Map`: the native map and its size, without the proofs. -/
-structure SizedRaw (α : Type u) (β : Type v) [BEq α] [Hashable α] where
-  toRaw : Lean.PersistentHashMap α β
-  size : Nat
+abbrev SizedRaw := HAMTVerify.SizedRaw
 
 -- Compile paired entry points to inspect erasure of the wrapper and proof fields.
 @[noinline] def wrappedInsert (map : Map Nat Nat) (key value : Nat) : Map Nat Nat :=
   map.insert key value
 
 @[noinline] def rawInsert (map : SizedRaw Nat Nat) (key value : Nat) : SizedRaw Nat Nat :=
-  let size := if HAMTVerify.contains map.toRaw key then map.size else map.size + 1
-  ⟨HAMTVerify.insert map.toRaw key value, size⟩
+  HAMTVerify.insertSizedImpl map key value
 
 @[noinline] def wrappedContains (map : Map Nat Nat) (key : Nat) : Bool :=
   map.contains key

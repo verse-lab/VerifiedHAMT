@@ -1,6 +1,7 @@
 module
 
 public import HAMTVerify.Size
+public import HAMTVerify.ContainsThenInsert
 import all Lean.Data.PersistentHashMap
 
 @[expose] public section
@@ -17,15 +18,11 @@ namespace HAMTVerify
 its number of keys, which the native map does not store. The proof fields are erased
 at runtime; the native map and the size remain. Use `∅`, `insert`, and `ofList` to build
 maps, or `ofRaw` when proofs for an existing native map are available. -/
-structure Map (α : Type u) (β : Type v) [BEq α] [Hashable α] where
-  /-- Explicit access to the native representation. -/
-  toRaw : Lean.PersistentHashMap α β
+structure Map (α : Type u) (β : Type v) [BEq α] [Hashable α] extends SizedRaw α β where
   /-- Every stored key follows its hash route. -/
   valid : Valid toRaw
   /-- Keys are unique, so overwriting has the usual map semantics. -/
   unique : Unique toRaw.root
-  /-- The number of keys. -/
-  size : Nat
   /-- `size` counts the keys stored in the native tree. -/
   size_eq : size = keyCount toRaw.root
 
@@ -37,7 +34,7 @@ variable {α : Type u} {β : Type v} [BEq α] [Hashable α]
 in time and memory linear in the size of the map. -/
 @[inline] def ofRaw (raw : Lean.PersistentHashMap α β)
     (valid : Valid raw) (unique : Unique raw.root) : Map α β :=
-  ⟨raw, valid, unique, keyCount raw.root, rfl⟩
+  ⟨⟨raw, keyCount raw.root⟩, valid, unique, rfl⟩
 
 /-- `unique_empty`, stated for the root of the native empty map: the body of `empty` below
 is exposed, so it cannot unfold the unexposed `Lean.PersistentHashMap.empty` itself. -/
@@ -46,21 +43,22 @@ theorem unique_empty_root : Unique (Lean.PersistentHashMap.empty : Lean.Persiste
 
 /-- The empty map; also written `∅` or `{}`. -/
 @[inline] def empty : Map α β :=
-  ⟨Lean.PersistentHashMap.empty, valid_empty, unique_empty_root, 0, keyCount_empty_root.symm⟩
+  ⟨⟨Lean.PersistentHashMap.empty, 0⟩, valid_empty, unique_empty_root, keyCount_empty_root.symm⟩
 
 instance : EmptyCollection (Map α β) := ⟨empty⟩
 instance : Inhabited (Map α β) := ⟨∅⟩
 
-/-- Verified insertion, carrying the preservation proofs automatically. Only a new key
-increases the size, so insertion first looks the key up. -/
+/-- Verified insertion, carrying the preservation proofs automatically. The tree
+and size are updated together in one traversal using a reusable container. -/
 @[inline] def insert [LawfulBEq α] (map : Map α β) (key : α) (value : β) : Map α β :=
-  -- Compute the size first: the lookup borrows the native map, which the insertion can
-  -- then still update in place.
-  let size := if HAMTVerify.contains map.toRaw key then map.size else map.size + 1
-  ⟨HAMTVerify.insert map.toRaw key value,
+  let result := HAMTVerify.insertSized map.toSizedRaw key value
+  ⟨result,
     valid_insert map.toRaw map.valid key value,
     unique_insert map.toRaw map.valid map.unique key value,
-    size, by rw [keyCount_insert map.toRaw map.valid map.unique, ← map.size_eq]⟩
+    by
+      change (if HAMTVerify.contains map.toRaw key then map.size else map.size + 1) =
+        keyCount (HAMTVerify.insert map.toRaw key value).root
+      rw [keyCount_insert map.toRaw map.valid map.unique, ← map.size_eq]⟩
 
 instance [LawfulBEq α] : Singleton (α × β) (Map α β) :=
   ⟨fun kv => (∅ : Map α β).insert kv.1 kv.2⟩
@@ -95,7 +93,12 @@ def keys (map : Map α β) : List α := keyList map.toRaw.root
 @[scoped simp] theorem ofRaw_toRaw (map : Map α β) :
     ofRaw map.toRaw map.valid map.unique = map := by
   cases map with
-  | mk raw valid unique size size_eq => subst size_eq; rfl
+  | mk data valid unique size_eq =>
+    cases data with
+    | mk raw size =>
+      change size = keyCount raw.root at size_eq
+      subst size
+      rfl
 
 @[scoped simp] theorem size_ofRaw (raw : Lean.PersistentHashMap α β)
     (valid : Valid raw) (unique : Unique raw.root) :

@@ -67,9 +67,7 @@ example [BEq α] [Hashable α] (set : Set α) :
 #print axioms Set.size_insert
 
 /-- The runtime data of `Set`: the native map and its size, without the proofs. -/
-structure SizedRaw (α : Type u) [BEq α] [Hashable α] where
-  toRaw : Lean.PersistentHashMap α Unit
-  size : Nat
+abbrev SizedRaw (α : Type u) [BEq α] [Hashable α] := HAMTVerify.SizedRaw α Unit
 
 -- Paired entry points compare the wrapper to our verified map operations on
 -- the set's runtime data, not to upstream's opaque partial constants.
@@ -77,8 +75,7 @@ structure SizedRaw (α : Type u) [BEq α] [Hashable α] where
 
 /-- `Map.insert` on the runtime data; `Set.insert` passes the unit value to it. -/
 @[inline] def SizedRaw.insert (set : SizedRaw Nat) (key : Nat) (value : Unit) : SizedRaw Nat :=
-  let size := if HAMTVerify.contains set.toRaw key then set.size else set.size + 1
-  ⟨HAMTVerify.insert set.toRaw key value, size⟩
+  HAMTVerify.insertSizedImpl set key value
 
 @[noinline] def rawInsert (set : SizedRaw Nat) (key : Nat) : SizedRaw Nat := set.insert key ()
 

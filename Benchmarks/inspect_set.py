@@ -12,15 +12,42 @@ import subprocess
 from pathlib import Path
 
 
+def check_sized_reuse(name, body):
+    """Guard the ownership behavior lost by the earlier Bool/Node implementation."""
+    fields = re.search(r"(\w+) = lean_ctor_get\((\w+), 0\);", body)
+    if fields is None:
+        raise RuntimeError(f"Missing sized-map projection: {name}")
+    node, carrier = fields.groups()
+    branch = re.search(r"if \(lean_obj_tag\(" + re.escape(node) + r"\) == 0\)", body)
+    if branch is None:
+        raise RuntimeError(f"Review changed entries branch: {name}")
+    start = body.index("{", branch.end())
+    depth = 1
+    end = start + 1
+    while depth:
+        depth += (body[end] == "{") - (body[end] == "}")
+        end += 1
+    entries = body[start:end]
+    if f"lean_is_exclusive({node})" not in entries:
+        raise RuntimeError(f"Entries constructor no longer available for reuse: {name}")
+    if f"lean_is_exclusive({carrier})" not in body:
+        raise RuntimeError(f"Input size container no longer available for reuse: {name}")
+    results = re.findall(r"(\w+) = " + re.escape(name) + r"\(", entries)
+    if not results or any(f"lean_is_exclusive({result})" not in entries for result in results):
+        raise RuntimeError(f"Recursive size result no longer available for reuse: {name}")
+
+
 def inspect(root, output, helper, stem, lean):
     inserting = stem == "SetInsert"
     label = "set-insert" if inserting else "set-contains"
     c_path = root / f".lake/build/ir/Benchmarks/{stem}.c"
     source = c_path.read_text()
-    selected, timers, hot, loops, cached = [], [], [], [], []
+    selected, timers, hot, loops, cached, sized = [], [], [], [], [], []
     prefixes = (
         "lp_HAMTVerify_Lean_PersistentHashMap_insertAux___at",
         "lp_HAMTVerify_HAMTVerify_insertNodeCached___at",
+        "lp_HAMTVerify_HAMTVerify_insertSizedRaw___at",
+        "lp_HAMTVerify_HAMTVerify_insertSizedNoExpand___at",
     ) if inserting else (
         "lp_HAMTVerify_Lean_PersistentHashMap_containsAux___at",
         "lp_HAMTVerify_HAMTVerify_containsNode___at",
@@ -38,10 +65,17 @@ def inspect(root, output, helper, stem, lean):
                      "___redArg(" in body.splitlines()[0])
         if traversal:
             hot.append(name)
-            if "HAMTVerify_insertNodeCached___at" in name:
+            if name.startswith(("lp_HAMTVerify_HAMTVerify_insertNodeCached___at",
+                                "lp_HAMTVerify_HAMTVerify_insertSizedRaw___at",
+                                "lp_HAMTVerify_HAMTVerify_insertSizedNoExpand___at")):
                 if "lean_apply_" in body or "lean_alloc_closure" in body:
                     raise RuntimeError(f"Indirect call or closure in cached traversal: {name}")
+                if re.search(r"HAMTVerify_contains(?:Node|At)?___", body):
+                    raise RuntimeError(f"Separate membership lookup in insertion: {name}")
                 cached.append(name)
+                if name.startswith("lp_HAMTVerify_HAMTVerify_insertSized"):
+                    check_sized_reuse(name, body)
+                    sized.append(name)
         loop = (inserting and "Range_forIn_x27_loop___at" in name and "Batch___at" in name and
                 "___boxed" not in name and "Round" in body and "digest" in body)
         if loop:
@@ -60,7 +94,7 @@ def inspect(root, output, helper, stem, lean):
             loops.append(name)
         if timed or traversal or loop:
             selected.append((name, body))
-    expected = (6, 4, 4, 2) if inserting else (8, 4, 0, 0)
+    expected = (6, 8, 4, 6) if inserting else (8, 4, 0, 0)
     actual = (len(timers), len(hot), len(loops), len(cached))
     if actual != expected:
         raise RuntimeError(f"Review changed {stem} specialization: {actual} != {expected}")
@@ -124,6 +158,7 @@ def inspect(root, output, helper, stem, lean):
         "arm64_round_loop_checked": asm_loops,
         "specialized_traversals": hot,
         "cached_traversals_without_closures_or_indirect_calls": cached,
+        "sized_traversals_with_container_and_node_reuse": sized,
     }
 
 

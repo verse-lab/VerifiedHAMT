@@ -50,6 +50,12 @@ example [BEq α] [LawfulBEq α] (k : α) (v : β) (hashAt : α → USize) :
 /-- info: 'HAMTVerify.insertNodeCached_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.insertNodeCached_eq
+/-- info: 'HAMTVerify.containsThenInsert_eq_impl' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms HAMTVerify.containsThenInsert_eq_impl
+/-- info: 'HAMTVerify.insertSized_eq_impl' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms HAMTVerify.insertSized_eq_impl
 /-- info: 'HAMTVerify.mem_insert_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms HAMTVerify.mem_insert_iff
@@ -82,6 +88,21 @@ private partial def sameNode [BEq α] [BEq β] : Node α β → Node α β → B
 private def modelFind [BEq α] (key : α) (model : List (α × Nat)) : Option Nat :=
   (model.find? (fun kv => key == kv.1)).map Prod.snd
 
+/-- Check both outputs of the compiled fused operation against the separate total
+operations, including on raw nodes that need not satisfy the map invariants. -/
+private def checkedInsert [BEq α] [Hashable α] (map : Lean.PersistentHashMap α Nat)
+    (key : α) (value : Nat) : IO (Lean.PersistentHashMap α Nat) := do
+  let (found, updated) := HAMTVerify.containsThenInsert map key value
+  unless found == HAMTVerify.contains map key &&
+      sameNode updated.root (HAMTVerify.insert map key value).root do
+    throw <| IO.userError "fused membership/insertion mismatch"
+  -- A nonzero accumulator catches implementations that reset the count during
+  -- descent or accidentally count the entries reinserted by a promotion.
+  let sized := HAMTVerify.insertSized ⟨map, 37⟩ key value
+  unless sameNode sized.toRaw.root updated.root && sized.size == (if found then 37 else 38) do
+    throw <| IO.userError "sized insertion accumulator mismatch"
+  return updated
+
 private def checkMaps [BEq α] [Hashable α] (label : String)
     (total native : Lean.PersistentHashMap α Nat) (model : List (α × Nat))
     (queries : Array α) : IO Nat := do
@@ -108,7 +129,7 @@ private def checkSequence [BEq α] [Hashable α] (label : String) (makeKey : Nat
     let oldTotal := total
     let oldNative := native
     let oldModel := model
-    total := HAMTVerify.insert total key value
+    total ← checkedInsert total key value
     native := native.insert key value
     model := (key, value) :: model.filter (fun kv => !(kv.1 == key))
     checks := checks + (← checkMaps s!"{label}/insert/{step}" total native model queries)
@@ -117,7 +138,7 @@ private def checkSequence [BEq α] [Hashable α] (label : String) (makeKey : Nat
   for step in [0:192] do
     let key := makeKey ((step * 53) % 96)
     let value := step % 17
-    total := HAMTVerify.insert total key value
+    total ← checkedInsert total key value
     native := native.insert key value
     model := (key, value) :: model.filter (fun kv => !(kv.1 == key))
     checks := checks + (← checkMaps s!"{label}/replace/{step}" total native model queries)
@@ -134,7 +155,7 @@ private def checkPromotionBoundaries : IO Unit := do
   let mut total : Lean.PersistentHashMap Nat Nat := {}
   let mut native : Lean.PersistentHashMap Nat Nat := {}
   for k in [0:5] do
-    total := HAMTVerify.insert total k (k + 10)
+    total ← checkedInsert total k (k + 10)
     native := native.insert k (k + 10)
     unless sameNode total.root native.root do throw <| IO.userError "promotion boundary mismatch"
     let expectedPromotion := k >= 3
@@ -146,7 +167,7 @@ private def checkPromotionBoundaries : IO Unit := do
   -- duplicate overwrite an earlier value, motivating the theorem's premise.
   let duplicateMap : Lean.PersistentHashMap Nat Nat :=
     ⟨.collision #[2, 7, 2, 8] #[20, 70, 21, 80] rfl⟩
-  let dupTotal := HAMTVerify.insert duplicateMap 2 99
+  let dupTotal ← checkedInsert duplicateMap 2 99
   let dupNative := duplicateMap.insert 2 99
   unless sameNode dupTotal.root dupNative.root && dupTotal.find? 2 == some 21 do
     throw <| IO.userError "duplicate-key promotion behavior changed"
@@ -165,7 +186,7 @@ private def checkManualNodes : IO Nat := do
     let mut native := initial
     let mut model := (List.range size).map (fun k => (k, k + 100))
     for key in #[0, size, size / 2, size + 1] do
-      total := HAMTVerify.insert total key 999
+      total ← checkedInsert total key 999
       native := native.insert key 999
       model := (key, 999) :: model.filter (fun kv => kv.1 != key)
       checks := checks + (← checkMaps s!"manual-bucket/{size}/{key}" total native model queries)
@@ -177,7 +198,13 @@ private def checkManualNodes : IO Nat := do
       (by simpa [mkEmptyEntriesArray] using slot_lt_branching 0))
   let initial : Lean.PersistentHashMap Nat Nat := ⟨node⟩
   checks := checks + (← checkMaps "deep-existing-tree"
-    (HAMTVerify.insert initial 2 20) (initial.insert 2 20) [(1, 10), (2, 20)] queries)
+    (← checkedInsert initial 2 20) (initial.insert 2 20) [(1, 10), (2, 20)] queries)
+  checks := checks + (← checkMaps "deep-existing-tree/overwrite"
+    (← checkedInsert initial 1 99) (initial.insert 1 99) [(1, 99)] queries)
+  -- Malformed out-of-bounds entries return false and leave the tree unchanged.
+  let _ ← checkedInsert ⟨.entries #[]⟩ 0 10
+  let _ : Hashable Nat := ⟨fun _ => 31⟩
+  let _ ← checkedInsert ⟨.entries #[.null]⟩ 0 10
   return checks
 
 def run : IO Unit := do
@@ -189,6 +216,6 @@ def run : IO Unit := do
   checks := checks + (← checkNat "constant" (fun _ => 0))
   checks := checks + (← checkNat "high-bits" (fun n => n.toUInt64 <<< 60))
   checks := checks + (← checkSequence "names" (fun n => Lean.Name.num (.str .anonymous "insert") n))
-  IO.println s!"insert: {checks} query comparisons passed, with complete node comparisons, promotion boundaries, and snapshots."
+  IO.println s!"insert: {checks} query comparisons passed, with fused membership/insertion, complete node comparisons, promotion boundaries, and snapshots."
 
 end HAMTVerify.InsertTests

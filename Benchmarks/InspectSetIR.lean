@@ -10,7 +10,9 @@ run_meta do
       ``HAMTVerify.Set.insert, ``HAMTVerify.Set.contains, ``HAMTVerify.Set.toRaw,
       ``HAMTVerify.Map.insert, ``HAMTVerify.Map.contains,
       ``Lean.PersistentHashMap.containsAux, ``HAMTVerify.containsNode,
-      ``Lean.PersistentHashMap.insertAux, ``HAMTVerify.insertNodeCached] do
+      ``Lean.PersistentHashMap.insertAux, ``HAMTVerify.insertNodeCached,
+      ``HAMTVerify.containsThenInsertImpl, ``HAMTVerify.insertSizedRaw,
+      ``HAMTVerify.insertSizedNoExpand] do
     if (IR.findEnvDecl env name).isNone then
       throwError "No compiler IR found for {name}"
     for candidate in [name, name ++ `_redArg] do

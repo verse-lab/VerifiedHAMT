@@ -7,7 +7,7 @@ Verification of membership queries and insertion on Lean **v4.32.0**'s native
 
 Use `HAMTVerify.Map α β` for ordinary code. It bundles the native map with both
 `Valid` (hash routing) and `Unique` (no duplicate keys), following the
-[standard library's bundled tree-map design](https://lean-lang.org/doc/api/Std/Data/DTreeMap/Basic.html#Std.DTreeMap),
+[standard library's bundled `Std.TreeMap` / `Std.DTreeMap` design](https://lean-lang.org/doc/api/Std/Data/DTreeMap/Basic.html#Std.DTreeMap),
 and with its number of keys, which the native map does not store.
 Empty maps and insertions construct and preserve these proofs and the size automatically.
 The public theorems require no separate invariant hypotheses:
@@ -47,15 +47,17 @@ them. Importing counts the keys, in time and memory linear in the size of the ma
 for raw-map proofs. The wrapper exposes the currently verified operations;
 value lookup and deletion are still outside the verified API.
 
-The proof fields are erased; at runtime the wrapper holds the native map and its
-size. Since only a new key increases the size, insertion looks the key up first;
-the lookup only borrows the native map, which the insertion can then still update
-in place. On Lean 4.32.0, the paired Nat insertion and lookup entry points in
+`Map` extends `SizedRaw`, which holds the native map and its size; the added proof
+fields are erased. Insertion passes this runtime container directly to
+`insertSized`, updating the tree and size in one traversal. The container is
+reused on descent and return, and the traversal releases each old child reference
+before updating it. Only a new key increases the size.
+On Lean 4.32.0, the paired Nat insertion and lookup entry points in
 `HAMTVerifyTests/Map.lean` compile to the same IR signatures and bodies, including
 ownership annotations, as hand-written functions on a structure holding just the
 native map and the size, and call the same specialized functions in generated C.
-`HAMTVerifyTests/MapIR.lean` checks this as part of `lake test`, ignoring declaration
-and constructor names. Thus this compiler check finds no proof computation and no
+`HAMTVerifyTests/MapIR.lean` checks this as part of `lake test`, ignoring only
+declaration names. Thus this compiler check finds no proof computation and no
 work beyond maintaining the size for those entry points; it is not a universal
 wall-clock performance theorem. Reproduce the IR check with:
 
@@ -116,7 +118,7 @@ opaque insertion and query are used only as runtime test oracles.
 `HAMTVerifyTests/SetIR.lean` compares bundled Nat insertion/query entry points against
 hand-written functions calling the verified map operations on the set's runtime
 data, the native map and its size. Their compiled IR signatures and bodies are
-identical after ignoring declaration and constructor names, including ownership
+identical after ignoring declaration names, including ownership
 annotations. This check is part of `lake test`; it does not assert
 formal equivalence with upstream partial constants or a universal timing bound.
 
@@ -219,6 +221,43 @@ slots, and uniqueness those of a collision node. `keyCount_insert` shows that
 insertion adds one exactly when the key is new. The bundled map caches this count,
 with the invariant `size = keyCount toRaw.root`; `Map.keys` exposes the list.
 
+`insertSized` specifies the existing insertion together with the conditional size
+update. Its `@[csimp]` theorem replaces it with `insertSizedImpl`, preserving the
+bundled API's definitional equalities. The executable traversal carries the
+whole map's count in one reusable `SizedRaw`, changes it at the insertion site,
+and reconstructs each parent directly so its node constructor can also be reused.
+The native HAMT nodes keep their existing representation. This avoids allocating a
+`Bool × Node` result at each level or converting wrappers at the public entry point.
+
+At a collision node the traversal compares array lengths before and after the
+existing insertion scan, before any promotion rebuild. The equivalence proof
+requires no routing, uniqueness, or lawful-equality assumptions. On malformed
+short arrays the size accumulator follows the membership-based specification;
+it is a correct key count when the bundled invariants hold. `containsThenInsert`
+reuses this traversal with an initial accumulator of zero, producing its Boolean
+only at the API boundary. Map and set IR tests compare their insertion entry points
+with direct calls to the sized implementation.
+
+### Inspiration from Lean's TreeMap
+
+In Lean v4.32.0, `Std.TreeMap` wraps `Std.DTreeMap`. Its internal
+[`Impl.insert` and `Impl.containsThenInsert`](https://github.com/leanprover/lean4/blob/8c9756b28d64dab099da31a4c09229a9e6a2ef35/src/Std/Data/DTreeMap/Internal/Operations.lean#L327-L365)
+provide the relevant example: insertion returns an updated tree with cached sizes
+and erased proofs; `containsThenInsert` saves the old size, inserts, then compares
+the old and new sizes. It constructs the Boolean at the outer boundary, without
+passing a `Bool × Tree` result through every recursive level.
+
+HAMT nodes have no cached subtree sizes, so this project adapts that idea by
+carrying the whole map's count in `SizedRaw`. The insertion site updates the count;
+collision buckets compare their array lengths after the existing insertion scan.
+`Map` extends this same runtime structure with proof fields, allowing the wrapper
+to erase and the container to be reused throughout insertion. TreeMap's
+`containsThenInsert` above uses ordinary insertion and size comparison, not a
+`@[csimp]` replacement. Our `@[csimp]` theorem is a separate choice to preserve the
+simple logical specification and the bundled API's definitional equalities.
+`insertIfNew` would leave an existing value unchanged, so it cannot replace the
+overwriting `Map.insert` operation.
+
 ## Relationship to Lean's implementation
 
 The total functions in `HAMTVerify/Contains.lean` use Lean's existing `Node` and
@@ -293,6 +332,54 @@ See [Benchmarks/README.md](Benchmarks/README.md) for map and set workloads,
 measurement commands, and compiler inspection. Run the benchmarks on the target
 machine to evaluate performance with its hardware and toolchain.
 
+### Size-insertion tuning, 2026-10-02
+
+The tuning proceeded in three steps:
+
+1. Fusing `contains` and `insert` into a traversal returning `Bool × Node` removed
+   the second lookup but made insertion slower. Generated C showed a pair
+   allocation at each level and loss of `Node.entries` constructor reuse. These
+   observations explain the optimization direction; their individual costs were
+   not measured separately.
+2. Following the TreeMap idea above, a prototype carried the tree and total count
+   together and reconstructed parents directly in each branch. A short pilot
+   measured 1.169× native, but the public map still converted to and from a
+   distinct traversal container.
+3. Making `Map` extend `SizedRaw` eliminated those runtime conversions. The next
+   pilot measured 1.068× native; the full evaluation measured 1.074×. Both pilots
+   used one process, five paired samples per case, and 10 ms target batches, so
+   their figures are exploratory rather than the final comparison.
+
+The full evaluation used Lean v4.32.0 on macOS ARM64, with 18 Set insertion
+scenarios exercising `Map α Unit`. Each version ran in three processes with nine
+paired samples per scenario per process and 20 ms target batches. All builds
+finished before timing, and benchmark processes ran sequentially. The table is
+the equal-weight geometric mean of each scenario's median paired verified/native
+time ratio; lower is better.
+
+| Implementation | Time / native |
+| --- | ---: |
+| Historical implementation without a cached size | 1.022× |
+| Cached size using `contains` then `insert` | 1.478× |
+| Fused traversal returning `Bool × Node` | 1.595× |
+| Reusable `SizedRaw`, shared with `Map` | 1.074× |
+
+The final native-normalized time fell 32.7% relative to the pair-returning version
+and 27.3% relative to the two-pass version; all 18 scenarios improved against
+both. A 5.1% aggregate overhead remains relative to the historical no-size
+version. These ratios describe these workloads and this machine; normalizing by
+native timings cannot eliminate all measurement noise.
+
+`lake test` passed, including size/overwrite/promotion checks and exact Map/Set IR
+comparisons after proof erasure. Compiler inspection also checks that the sized
+traversals retain container and entries-node reuse and contain no separate
+membership lookup. The local artifacts are in
+`Benchmarks/results/fused-insert-20261002/` and
+`Benchmarks/results/sized-carrier-20261002/`: metadata, source snapshots, pilot and
+full results, comparisons, and generated-code evidence. Those directories are
+gitignored; this README preserves the design rationale and measured summary in
+the tracked documentation.
+
 ## Files
 
 - `HAMTVerify/Basic.lean`: structural membership, invariants, index bounds, empty map.
@@ -300,6 +387,8 @@ machine to evaluate performance with its hardware and toolchain.
 - `HAMTVerify/Bindings.lean`: structural key/value membership and uniqueness.
 - `HAMTVerify/Insert.lean`: total insertion, collision updates, and bucket promotion.
 - `HAMTVerify/InsertCachedProofs.lean`: equality of cached-hash insertion and the total proof model.
+- `HAMTVerify/InsertSized.lean`: reusable runtime size container, insertion traversal, and equivalence proofs.
+- `HAMTVerify/ContainsThenInsert.lean`: fused membership and insertion, with a proved compiler rewrite.
 - `HAMTVerify/Size.lean`: structural key list and count, and their meaning under the invariants.
 - `HAMTVerify/Map.lean`: bundled map type with its size, invariant-preserving API, and laws without invariant premises.
 - `HAMTVerify/Set.lean`: verified set interface backed by `Map α Unit` and scoped membership laws.
