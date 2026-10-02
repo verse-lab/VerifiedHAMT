@@ -3,3 +3,4 @@ __pycache__/
 /Benchmarks/*
 !/Benchmarks/*.lean
 !/Benchmarks/*.py
+!/Benchmarks/README.md
