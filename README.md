@@ -82,6 +82,45 @@ The proof fields are erased, so at runtime a `Map` is just the native map and it
 size. `lake test` checks that the bundled `Nat` insertion and lookup compile to
 the same IR as direct calls on that data.
 
+### Bundled set without values
+
+`HAMTVerify.SetWithoutValArray α` uses a separate keys-only representation:
+`Entry.entry key` and `Node.collision keys`, with no value fields or `vals`
+arrays. It keeps the native branching factor, promotion threshold, and depth
+limit, adapting this project's total insertion and membership implementations.
+
+```lean
+import HAMTVerify.SetWithoutValArray
+open HAMTVerify
+open scoped HAMTVerify.SetWithoutValArray
+
+def compactSet : SetWithoutValArray Nat := .ofList [7, 3, 7]
+#eval compactSet.contains 3 -- true
+#eval compactSet.size -- 2, in constant time
+#eval (compactSet.insert 10).size -- 3
+
+example (xs : List Nat) (key : Nat) :
+    (SetWithoutValArray.ofList xs).contains key = xs.contains key := by simp
+```
+
+The collection API follows `HAMTVerify.Set`: `empty`, literals, `insert`,
+`ofList`, `contains`, decidable structural membership, `toList`, and **O(1)
+`size`**. It bundles routing, uniqueness, and count-correctness proofs, so the
+public theorems need no invariant hypotheses. `size_insert`, `mem_toList`,
+`nodup_toList`, and `length_toList` are proved, as are the query and insertion
+laws. Proof fields are erased.
+
+Insertion reuses the existing `SizedRaw` technique: the public runtime container
+carries the total count along one hash route, and a proved `@[csimp]` rewrite
+selects the fused implementation. There is no separate membership traversal.
+`toRaw` exports a `SetWithoutValArray.Raw` tree in constant time; `ofRaw` accepts
+proofs of its invariants and counts its keys in linear time. This representation
+has no zero-copy native-map bridge or `toMap`/`ofMap`.
+
+See [the experiment](docs/SetWithoutValArray.md) for measurements and limitations,
+and [the benchmark instructions](Benchmarks/README.md#keys-only-set-experiment)
+to reproduce them. The existing `Set` API is unchanged.
+
 ## What is verified
 
 | Theorem | Statement |
@@ -148,5 +187,6 @@ hash functions, including a constant one.
 | `HAMTVerify/InsertSized.lean` | insertion that also updates the size |
 | `HAMTVerify/ContainsThenInsert.lean` | fused membership test and insertion |
 | `HAMTVerify/Map.lean`, `HAMTVerify/Set.lean` | bundled APIs |
+| `HAMTVerify/SetWithoutValArray/` | keys-only bundled set, fused size maintenance, membership/uniqueness/count proofs |
 | `HAMTVerifyTests/` | proof examples, axiom and IR checks, regression tests |
 | `Benchmarks/` | benchmark workloads, runner, compiler inspection |

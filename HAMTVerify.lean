@@ -13,4 +13,6 @@ public import HAMTVerify.Size
 public import HAMTVerify.Map
 public import HAMTVerify.Set
 
+public import HAMTVerify.SetWithoutValArray
+
 @[expose] public section

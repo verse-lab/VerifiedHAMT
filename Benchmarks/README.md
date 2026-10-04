@@ -88,3 +88,67 @@ assumptions about generated symbols and specializations that may need review
 when upgrading Lean. Compiler checks support interpretation of the measured
 code; they do not prove a universal cost bound or logical equivalence with
 upstream's opaque partial constants.
+
+## Keys-only set experiment
+
+```sh
+python3 Benchmarks/run_without_vals.py --runs 3 --samples 10 --target-ms 20
+python3 Benchmarks/inspect_without_vals.py
+```
+
+This separate runner compares five implementations in 40 workloads (18
+insertion and 22 lookup cases), rotating execution order on each sample:
+
+| CSV prefix | Implementation |
+| --- | --- |
+| `native` | `Lean.PersistentHashSet` |
+| `raw` | Existing total `HAMTVerify.insert` / `contains` on `PersistentHashMap α Unit`, without a size counter |
+| `bundled` | Existing `HAMTVerify.Set`, with its cached size |
+| `bare` | Unsized keys-only `HAMTVerify.SetWithoutValArray.Raw` |
+| `keys` | Bundled `HAMTVerify.SetWithoutValArray`, with cached size and erased invariant proofs |
+
+`bundled` is the comparison with the same public semantics and size maintenance;
+`bare` isolates the cost of adding cached size to the keys-only representation.
+`raw` provides the unit-valued control without size maintenance. Native and
+bundled seeds share a tree; bare and keys-only seeds share another, built in the
+same order. Each insertion round borrows its seed, rotates the operation order,
+and consumes intermediate versions unless the workload retains snapshots.
+Insertion timings include digest queries and releasing the round's results.
+The lookup hit model is independent of all five implementations. Ten samples
+allow every backend to run first twice per process.
+
+The runner checks generated C to ensure specialized round and query loops have
+direct calls, then saves all samples, ratios, process medians, source/binary
+hashes, and environment metadata to `Benchmarks/results/without-vals-sized.json`.
+`lake test` also checks that the keys-only insertion traversals clear the parent
+slot before recursion, including their `Nat` specializations. Wrapper/raw IR
+comparisons check proof erasure, the fused compiler rewrite, and that `size`
+compiles like a field projection.
+
+`inspect_without_vals.py` saves IR, selected C, assembly, and check metadata in
+`Benchmarks/results/without-vals-ir/`. It checks container/node reuse in both
+generic sized workers and the four actual Nat/Name benchmark workers, absence
+of a separate lookup/count traversal, and direct calls in those specializations.
+The IR test also rejects intermediate product allocation in sized workers.
+The generic workers still use typeclass callbacks; the no-indirect-call checks
+apply to specialized code. Assembly checks target macOS ARM64 and reuse Lake's
+recorded compiler flags. Symbol-sensitive checks need review on Lean upgrades.
+
+After timing, `setWithoutValArrayMemory` counts unique reachable HAMT storage
+using the pinned runtime's `lean_object_byte_size`, deduplicating addresses
+across snapshots. This includes array capacity, node/entry objects, and the size
+carriers of both bundled APIs. It excludes key payloads, outer snapshot arrays, and
+allocator metadata/pages. It measures structural storage, **not RSS or total
+allocation traffic**. Its unsafe FFI is confined to the benchmark. Live roots
+are retained throughout accounting, and a self-check verifies that a shared
+array is counted once. Run the memory probe alone with:
+
+```sh
+lake build setWithoutValArrayMemory
+.lake/build/bin/setWithoutValArrayMemory
+```
+
+[SetWithoutValArray.lean](SetWithoutValArray.lean) contains the timing workloads;
+[SetWithoutValArrayMemory.lean](SetWithoutValArrayMemory.lean) contains the memory
+probe. Recorded results and their scope are in
+[docs/SetWithoutValArray.md](../docs/SetWithoutValArray.md).

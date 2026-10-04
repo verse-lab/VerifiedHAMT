@@ -24,6 +24,12 @@ def natInsert (map : Lean.PersistentHashMap Nat Nat) (key value : Nat) :
 def natSizedInsert (s : SizedRaw Nat Nat) (key value : Nat) : SizedRaw Nat Nat :=
   HAMTVerify.insertSizedImpl s key value
 
+def natKeysOnlyInsert (s : SetWithoutValArray Nat) (key : Nat) : SetWithoutValArray Nat :=
+  s.insert key
+
+def natKeysOnlyRawInsert (s : SetWithoutValArray.Raw Nat) (key : Nat) : SetWithoutValArray.Raw Nat :=
+  s.insert key
+
 /-- Count the recursive calls on every path through a function body, failing
 when one is reached before an array write of `Entry.null`. Join points are
 followed at each jump. -/
@@ -32,7 +38,8 @@ partial def countGuardedCalls (self : Array Name) (jps : Std.HashMap JoinPointId
   | .vdecl x _ e b =>
     match e with
     | .ctor info _ =>
-      let nulls := if info.name == ``Lean.PersistentHashMap.Entry.null then nulls.insert x else nulls
+      let nulls := if info.name == ``Lean.PersistentHashMap.Entry.null ||
+          info.name == ``HAMTVerify.SetWithoutValArray.Entry.null then nulls.insert x else nulls
       countGuardedCalls self jps nulls cleared b
     | .fap f ys =>
       if self.contains f then
@@ -58,12 +65,19 @@ partial def countGuardedCalls (self : Array Name) (jps : Std.HashMap JoinPointId
 /-- The traversals that recurse through an entries slot. -/
 def traversals : Array Name :=
   #[``HAMTVerify.insertNoExpand, ``HAMTVerify.insertNode,
-    ``HAMTVerify.insertSizedNoExpand, ``HAMTVerify.insertSizedRaw]
+    ``HAMTVerify.insertSizedNoExpand, ``HAMTVerify.insertSizedRaw,
+    ``HAMTVerify.SetWithoutValArray.Raw.insertNoExpand, ``HAMTVerify.SetWithoutValArray.Raw.insertNode,
+    ``HAMTVerify.SetWithoutValArray.Raw.insertSizedNoExpand,
+    ``HAMTVerify.SetWithoutValArray.Raw.insertSizedRaw]
 
 run_meta do
   let env ← getEnv
   -- The compiler's `_redArg` worker of each traversal contains its recursion.
-  let isWorker (name : Name) := name matches .str _ "_redArg"
+  let isWorker (name : Name) := (name matches .str _ "_redArg") ||
+    ((`HAMTVerify.SetWithoutValArray).isPrefixOf name &&
+      match name with
+      | .str _ s => s.startsWith "spec_"
+      | _ => false)
   let generic := traversals.map (· ++ `_redArg)
   let specialized := (declMapExt.getEntries env).toArray.filterMap fun decl =>
     if isWorker decl.name && traversals.any (·.isPrefixOf decl.name) then

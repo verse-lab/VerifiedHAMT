@@ -29,3 +29,11 @@ root = "Benchmarks.SetContains"
 [[lean_exe]]
 name = "setInsertBench"
 root = "Benchmarks.SetInsert"
+
+[[lean_exe]]
+name = "setWithoutValArrayBench"
+root = "Benchmarks.SetWithoutValArray"
+
+[[lean_exe]]
+name = "setWithoutValArrayMemory"
+root = "Benchmarks.SetWithoutValArrayMemory"

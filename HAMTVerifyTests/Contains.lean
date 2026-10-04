@@ -3,6 +3,7 @@ import HAMTVerifyTests.Insert
 import HAMTVerifyTests.ReleaseIR
 import HAMTVerifyTests.MapIR
 import HAMTVerifyTests.SetIR
+import HAMTVerifyTests.SetWithoutValArrayIR
 
 /-!
 Kernel-checked examples and executable comparisons against the upstream partial
@@ -109,3 +110,4 @@ def main : IO Unit := do
   HAMTVerify.InsertTests.run
   HAMTVerify.MapTests.run
   HAMTVerify.SetTests.run
+  HAMTVerify.SetWithoutValArrayTests.run
