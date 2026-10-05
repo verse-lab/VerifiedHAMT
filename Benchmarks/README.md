@@ -129,6 +129,9 @@ compiles like a field projection.
 `Benchmarks/results/without-vals-ir/`. It checks container/node reuse in both
 generic sized workers and the four actual Nat/Name benchmark workers, absence
 of a separate lookup/count traversal, and direct calls in those specializations.
+It also checks that the old collision-array size is read before insertion,
+without retaining an alias to that array across the call; otherwise an inlining
+change can silently turn an exclusive update into a copy.
 The IR test also rejects intermediate product allocation in sized workers.
 The generic workers still use typeclass callbacks; the no-indirect-call checks
 apply to specialized code. Assembly checks target macOS ARM64 and reuse Lake's

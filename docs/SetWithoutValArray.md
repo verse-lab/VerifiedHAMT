@@ -189,8 +189,9 @@ a Lean upgrade. The assembly checks currently cover macOS ARM64.
 The run on 2026-10-05 (Asia/Singapore) used Lean 4.32.0 Release and a native ARM64
 benchmark executable on macOS 26.3.1. The Python launcher reports x86_64 under
 Rosetta; that is not the benchmark executable's architecture. Three processes
-with ten samples each produced 1,200 validated five-backend samples. All source
-hashes and the inspected benchmark C hash match the saved timing report.
+with ten samples each produced 1,200 validated five-backend samples. Source and
+binary hashes, plus the inspected benchmark C hash, are saved in the report.
+These measurements precede the inlining follow-up below.
 
 Elapsed-time ratios, public keys-only set divided by each baseline:
 
@@ -236,3 +237,75 @@ is 12,312 bytes, the same carrier cost as the existing bundled `Set`. Actual
 savings depend on the mix of singleton leaves, collision buckets, array
 capacities, and shared paths; the structural figures exclude key payloads and
 allocator overhead as described above.
+
+## Inlining follow-up
+
+On the same Lean 4.32.0 toolchain, adding `@[inline]` to both
+`getCollisionNodeSize` and `mkCollisionNode` removes their calls from generated
+insertion code, but increases insertion time by 6.0% in the geometric mean.
+The 128-key constant-hash build and duplicate-insertion workloads regress by
+33.1% and 67.4%, respectively. Three baseline/candidate pairs, alternating
+order, gave aggregate insertion ratios of 1.073, 1.051, and 1.065. Normalizing
+against the unchanged bundled-Set control gives a similar aggregate, 1.059.
+
+The emitted C shows the ownership issue. Without inlining the size accessor,
+the collision branch computes the old size before consuming the old node:
+
+```text
+oldSize = array_size(oldKeys);
+newNode = insertCollisionAux(oldNode, key);
+newSize = getCollisionNodeSize(newNode);
+```
+
+Inlining the accessor exposes the new node's array projection and lets the
+compiler delay the old size read. The resulting reference-count operations
+keep the old array shared during insertion:
+
+```text
+inc_ref(oldKeys);
+newNode = insertCollisionAux(oldNode, key);
+oldSize = array_size(oldKeys);
+dec_ref(oldKeys);
+newSize = array_size(newKeys);
+```
+
+This prevents in-place collision-array updates even when the original set was
+exclusive. It occurs in both generic sized workers and all four Nat/Name
+benchmark specializations. `getCollisionNodeSize` therefore has an explicit
+`@[noinline]` boundary. The inspection script now checks that the old size read
+precedes collision insertion and that no old-array alias is retained across
+the call. The new check accepts the baseline and rejects the regressing code.
+
+`mkEmptyEntries` and `mkEmptyEntriesArray` are shared closed values. Their
+remaining calls in the generated benchmark C occur in initialization helpers,
+not the hot insertion loops. Proposition-valued definitions and proof terms
+are erased and do not benefit from runtime inlining.
+
+The follow-up uses preserved baseline/candidate executables, three processes
+per variant, ten samples per process, and a 10 ms calibration target. No builds
+run during timing. Raw samples, source snapshots, binary/C hashes, and the
+comparison script are saved under the ignored
+`Benchmarks/results/without-vals-inline/` directory; `comparison.json` records
+the two-inline experiment. Lookup-worker C is unchanged after renaming local
+variables, so small query timing shifts are not evidence of a lookup optimization.
+
+A second comparison keeps the size accessor `@[noinline]` and inlines only
+`mkCollisionNode`. This restores the old-size-before-insertion ordering and
+passes the ownership check. Insertion time is 1.008 times the baseline, or
+1.001 after normalizing against the bundled-Set control; individual process
+pair aggregates are 1.011, 1.001, and 1.010. Lookup is unchanged (1.000).
+There is no demonstrated speedup, so the constructor's inline annotation is
+not retained. `constructor-comparison.json` records this experiment with the
+same sampling protocol. The final source keeps only the protective `noinline`
+on the size accessor, plus the explanatory comment on the shared empty node.
+Final generated C for Basic, InsertSized, and the benchmark is byte-for-byte
+identical to the baseline; `final-code-comparison.json` records the hashes.
+
+| Change relative to the original Basic.lean | Insertion time ratio | Normalized against bundled Set |
+| --- | ---: | ---: |
+| Inline both size accessor and collision constructor | 1.060 | 1.059 |
+| Inline constructor, keep size accessor noinline | 1.008 | 1.001 |
+
+Ratios below one indicate less time. These are comparisons with the same
+keys-only implementation before the attribute changes, not with the unit-valued
+`HAMTVerify.Set`; the Set backend is only a timing control in the last column.

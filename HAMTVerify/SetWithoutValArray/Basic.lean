@@ -28,7 +28,7 @@ instance : Inhabited (Node α) := ⟨.entries #[]⟩
 def mkEmptyEntriesArray : Array (Entry α (Node α)) :=
   Array.replicate branching.toNat .null
 
--- FIXME: `@[inline]` might be appropriate here for performance?
+-- Compiled as a shared closed value; insertion does not rebuild this empty node.
 def mkEmptyEntries : Node α := .entries mkEmptyEntriesArray
 
 inductive IsCollisionNode : Node α → Prop where
@@ -36,7 +36,9 @@ inductive IsCollisionNode : Node α → Prop where
 
 abbrev CollisionNode (α : Type u) := { n : Node α // IsCollisionNode n }
 
-def getCollisionNodeSize : CollisionNode α → Nat
+-- Keep this call boundary: inlining can sink the old keys.size read past
+-- collision insertion, retaining the old array and forcing a copy (Lean 4.32).
+@[noinline] def getCollisionNodeSize : CollisionNode α → Nat
   | ⟨.collision keys, _⟩ => keys.size
   | ⟨.entries _, h⟩ => nomatch h
 

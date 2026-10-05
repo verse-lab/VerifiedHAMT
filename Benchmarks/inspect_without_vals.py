@@ -18,6 +18,24 @@ def load_module(name, path):
     return module
 
 
+def check_collision_size_before_insert(name, body):
+    """A live alias of the old keys across insertion defeats array reuse."""
+    calls = list(re.finditer(r"\w+ = \w*insertCollisionAux\w*\([^;]+;", body))
+    if len(calls) != 1:
+        raise RuntimeError(f"Review changed collision insertion path: {name}")
+    before = body[:calls[0].start()]
+    projections = list(re.finditer(r"(\w+) = lean_ctor_get\(\w+, 0\);", before))
+    if not projections:
+        raise RuntimeError(f"Missing old collision keys: {name}")
+    projection = projections[-1]
+    keys = re.escape(projection[1])
+    tail = before[projection.end():]
+    if not re.search(r"= lean_array_get_size\(" + keys + r"\);", tail):
+        raise RuntimeError(f"Old size read moved past collision insertion: {name}")
+    if re.search(r"lean_inc(?:_ref)?\(" + keys + r"\);", tail):
+        raise RuntimeError(f"Old keys retained across collision insertion: {name}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("Benchmarks/results/without-vals-ir"))
@@ -44,6 +62,7 @@ def main():
                      and "___boxed" not in name and "lean_obj_tag" in body)
             if sized:
                 reuse.check_sized_reuse(name, body)
+                check_collision_size_before_insert(name, body)
                 if re.search(r"\w+(?:contains|keyCount|keyList)\w*\(", body):
                     raise RuntimeError(f"Separate lookup/count in worker: {name}")
                 if index == 1:
@@ -92,6 +111,7 @@ def main():
         "ir_checks": "proof erasure, projection-only size, no product allocation or second lookup, "
                      "direct Nat calls, slot clearing before recursion",
         "generic_workers_with_reuse": generic,
+        "collision_ownership_checks": "old array size read before insertion; no retained array alias",
         "timed_nat_and_name_workers_with_reuse_and_direct_calls": specialized,
         "c_timers_checked": timers,
         "arm64_workers_checked": asm_checked,
