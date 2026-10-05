@@ -28,6 +28,7 @@ instance : Inhabited (Node α) := ⟨.entries #[]⟩
 def mkEmptyEntriesArray : Array (Entry α (Node α)) :=
   Array.replicate branching.toNat .null
 
+-- FIXME: `@[inline]` might be appropriate here for performance?
 def mkEmptyEntries : Node α := .entries mkEmptyEntriesArray
 
 inductive IsCollisionNode : Node α → Prop where

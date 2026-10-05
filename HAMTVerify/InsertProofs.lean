@@ -2,6 +2,7 @@ module
 
 public import HAMTVerify.Insert
 public import HAMTVerify.Size
+public import HAMTVerify.Util
 import all Lean.Data.PersistentHashMap
 import all Init.Data.Array.Basic
 
@@ -14,32 +15,6 @@ namespace HAMTVerify
 open Lean.PersistentHashMap
 
 variable {α : Type u} {β : Type v}
-
-section Util
-
--- FIXME: Should not hardcode these constants
-theorem hash_shift_offset (h offset : USize) (bound : offset.toNat + 5 ≤ 30) :
-    h >>> (offset + shift) = nextHash (h >>> offset) := by
-  change h >>> (offset + 5) = (h >>> offset) >>> (5 : USize)
-  apply USize.toNat_inj.mp
-  rcases System.Platform.numBits_eq with hb | hb
-  all_goals
-    simp only [USize.toNat_shiftRight, USize.toNat_add, USize.toNat_ofNat, hb]
-    have ho : offset.toNat < System.Platform.numBits := by omega
-    have hs : offset.toNat + 5 < System.Platform.numBits := by omega
-    simp only [hb] at ho hs
-    simp only [Nat.reducePow, Nat.reduceMod]
-    rw [Nat.mod_eq_of_lt (by omega : offset.toNat + 5 < _), Nat.mod_eq_of_lt hs,
-      Nat.mod_eq_of_lt ho, Nat.shiftRight_add]
-
-theorem offset_add_shift (offset : USize) (bound : offset.toNat + 5 ≤ 30) :
-    (offset + shift).toNat = offset.toNat + 5 := by
-  change (offset + 5).toNat = offset.toNat + 5
-  rcases System.Platform.numBits_eq with hb | hb <;>
-    simp only [USize.toNat_add, USize.toNat_ofNat, hb, Nat.reducePow, Nat.reduceMod] <;>
-    exact Nat.mod_eq_of_lt (by omega)
-
-end Util
 
 theorem insertCollisionAux_mem [BEq α] [LawfulBEq α]
     (keys : Array α) (vals : Array β) (hsz : keys.size = vals.size)
@@ -340,10 +315,6 @@ theorem insertNode_unique_updated [BEq α] [LawfulBEq α] [Hashable α] (levels 
           intro q w
           rw [rebuilt.2]
           simpa [hasBinding_entries, mkEmptyEntriesArray, EntryHasBinding] using uv.2 q w
-
-private theorem root_offset_bound : (0 : USize).toNat + 5 * (maxDepth.toNat - 1) ≤ 30 := by
-  rcases System.Platform.numBits_eq with hb | hb <;>
-    simp [maxDepth, USize.toNat_ofNat, hb]
 
 section MainParts
 

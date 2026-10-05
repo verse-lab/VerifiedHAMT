@@ -152,17 +152,12 @@ theorem keyCount_insert [BEq α] [LawfulBEq α] [Hashable α]
     have hk : key ∈ keyList set.root :=
       (mem_keyList wf key).mpr ((contains_eq_true_iff set wf key).mp hc)
     apply length_eq_of_nodup_of_mem_iff hnodup' hnodup
-    intro q
-    rw [hmem]
-    constructor
-    · rintro (rfl | h) <;> assumption
-    · exact Or.inr
+    grind
   · rename_i hc
     have hk : key ∉ keyList set.root := fun h =>
       hc ((contains_eq_true_iff set wf key).mpr ((mem_keyList wf key).mp h))
     rw [← List.length_cons]
     apply length_eq_of_nodup_of_mem_iff hnodup' (List.nodup_cons.mpr ⟨hk, hnodup⟩)
-    intro q
-    rw [hmem, List.mem_cons]
+    grind
 
 end HAMTVerify.SetWithoutValArray.Raw

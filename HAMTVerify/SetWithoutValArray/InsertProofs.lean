@@ -1,6 +1,7 @@
 module
 
 public import HAMTVerify.SetWithoutValArray.Insert
+public import HAMTVerify.Util
 
 @[expose] public section
 
@@ -9,32 +10,6 @@ namespace HAMTVerify.SetWithoutValArray.Raw
 
 open Lean.PersistentHashMap (shift maxDepth)
 variable {α : Type u}
-
-section Util
-
--- FIXME: Should not hardcode these constants
-theorem hash_shift_offset (h offset : USize) (bound : offset.toNat + 5 ≤ 30) :
-    h >>> (offset + shift) = nextHash (h >>> offset) := by
-  change h >>> (offset + 5) = (h >>> offset) >>> (5 : USize)
-  apply USize.toNat_inj.mp
-  rcases System.Platform.numBits_eq with hb | hb
-  all_goals
-    simp only [USize.toNat_shiftRight, USize.toNat_add, USize.toNat_ofNat, hb]
-    have ho : offset.toNat < System.Platform.numBits := by omega
-    have hs : offset.toNat + 5 < System.Platform.numBits := by omega
-    simp only [hb] at ho hs
-    simp only [Nat.reducePow, Nat.reduceMod]
-    rw [Nat.mod_eq_of_lt (by omega : offset.toNat + 5 < _), Nat.mod_eq_of_lt hs,
-      Nat.mod_eq_of_lt ho, Nat.shiftRight_add]
-
-theorem offset_add_shift (offset : USize) (bound : offset.toNat + 5 ≤ 30) :
-    (offset + shift).toNat = offset.toNat + 5 := by
-  change (offset + 5).toNat = offset.toNat + 5
-  rcases System.Platform.numBits_eq with hb | hb <;>
-    simp only [USize.toNat_add, USize.toNat_ofNat, hb, Nat.reducePow, Nat.reduceMod] <;>
-    exact Nat.mod_eq_of_lt (by omega)
-
-end Util
 
 theorem insertCollisionAux_mem [BEq α] [LawfulBEq α]
     (keys : Array α)
@@ -50,7 +25,6 @@ theorem insertCollisionAux_mem [BEq α] [LawfulBEq α]
     · exact insertCollisionAux_mem keys (i + 1) key q
   · simp [or_comm]
 termination_by keys.size - i
-
 
 theorem insertEntries_wf_mem [BEq α] [LawfulBEq α]
     (hashAt : α → USize) (es : Array (Entry α (Node α)))
@@ -87,7 +61,6 @@ theorem insertEntries_wf_mem [BEq α] [LawfulBEq α]
     have := childSpec child hmem
     apply finish <;> grind [EntryHasKey]
 
-
 theorem insertNoExpand_wf_mem [BEq α] [LawfulBEq α] {hashAt : α → USize}
     {node : Node α} (wf : WellFormed hashAt node) (key : α) :
     letI res := insertNoExpand node (hashAt key) key
@@ -100,7 +73,6 @@ theorem insertNoExpand_wf_mem [BEq α] [LawfulBEq α] {hashAt : α → USize}
     rw [insertNoExpand.eq_def]
     apply insertEntries_wf_mem hashAt es _ key (.entries hs route children)
     grind [Array.mem_iff_getElem]
-
 
 theorem rebuild_wf_mem [BEq α] [LawfulBEq α] [Hashable α]
     (childInsert : Node α → USize → α → Node α) (offset : USize)
@@ -174,11 +146,6 @@ theorem insertNode_wf_mem [BEq α] [LawfulBEq α] [Hashable α] (levels : Nat)
           rw [rebuilt.2]
           simpa [hasKey_entries, mkEmptyEntriesArray, EntryHasKey, ← Array.mem_iff_getElem] using hm q
 
-
-private theorem root_offset_bound : (0 : USize).toNat + 5 * (maxDepth.toNat - 1) ≤ 30 := by
-  rcases System.Platform.numBits_eq with hb | hb <;>
-    simp [maxDepth, USize.toNat_ofNat, hb]
-
 /-- Insertion preserves the routing invariant even when the input has duplicate keys. -/
 theorem valid_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Raw α) (wf : Valid map) (key : α) :
@@ -195,7 +162,6 @@ theorem mem_insert_iff [BEq α] [LawfulBEq α] [Hashable α]
     (insertNode_wf_mem (maxDepth.toNat - 1) 0 root_offset_bound map.root
       (by simpa [Valid] using wf) key).2 q
 
-
 /-- The previously proved lookup composes with the verified insertion. -/
 theorem contains_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Raw α) (wf : Valid map) (key q : α) :
@@ -208,6 +174,5 @@ theorem contains_insert [BEq α] [LawfulBEq α] [Hashable α]
     (map : Raw α) (wf : Valid map) (key : α) :
     contains (insert map key) key = true := by
   simp [contains_insert map wf]
-
 
 end HAMTVerify.SetWithoutValArray.Raw
