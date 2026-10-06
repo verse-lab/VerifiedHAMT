@@ -1,18 +1,19 @@
 name = "VerifiedHAMT"
 version = "0.1.0"
 defaultTargets = ["VerifiedHAMT"]
-testDriver = "containsTests"
+testDriver = "VerifiedHAMTTests"
 
 [[lean_lib]]
 name = "VerifiedHAMT"
 
 [[lean_lib]]
-name = "VerifiedHAMTTests"
+name = "VerifiedHAMTTestsLib"       # Avoid name clashing with the executable
+roots = ["VerifiedHAMTTests"]
 globs = ["VerifiedHAMTTests.+"]
 
 [[lean_exe]]
-name = "containsTests"
-root = "VerifiedHAMTTests.Contains"
+name = "VerifiedHAMTTests"
+root = "VerifiedHAMTTests"
 
 [[lean_exe]]
 name = "containsBench"

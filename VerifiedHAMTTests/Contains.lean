@@ -1,9 +1,4 @@
 import VerifiedHAMT
-import VerifiedHAMTTests.Insert
-import VerifiedHAMTTests.ReleaseIR
-import VerifiedHAMTTests.MapIR
-import VerifiedHAMTTests.SetIR
-import VerifiedHAMTTests.SetWithoutValArrayIR
 
 /-!
 Kernel-checked examples and executable comparisons against the upstream partial
@@ -104,10 +99,3 @@ def run : IO Unit := do
   IO.println s!"contains: {checks} comparisons passed (total implementation, upstream, list model)."
 
 end VerifiedHAMT.Tests
-
-def main : IO Unit := do
-  VerifiedHAMT.Tests.run
-  VerifiedHAMT.InsertTests.run
-  VerifiedHAMT.MapTests.run
-  VerifiedHAMT.SetTests.run
-  VerifiedHAMT.SetWithoutValArrayTests.run
