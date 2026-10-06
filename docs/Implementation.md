@@ -13,7 +13,7 @@ its proof fields are erased. `Set` delegates every operation to its underlying
 insertion and query serve only as test oracles.
 
 `VerifiedHAMTTests/MapIR.lean` and `VerifiedHAMTTests/SetIR.lean` check this as part
-of `lake test`. On Lean v4.32.0, the bundled `Nat` insertion and lookup compile to
+of `lake test`. On Lean v4.32.0, the bundled `Nat` insertion, membership, `find?`, and `findD` compile to
 the same IR signatures and bodies, including ownership annotations, as direct
 calls of the verified operations on `SizedRaw`, ignoring only declaration names.
 These entry points therefore do no proof computation and no work beyond
@@ -24,6 +24,23 @@ alone:
 ```sh
 lake env lean VerifiedHAMTTests/MapIR.lean
 ```
+
+## Value lookup
+
+`find?` borrows nodes during its hash-directed traversal and first-match
+collision scan. It computes the hash once at the root and returns `none` on
+short malformed arrays. Bounds and termination proofs are erased.
+`Benchmarks/inspect_find.py` checks generated C timer ordering and direct lookup
+calls in the specialized Nat/Name query loops.
+
+On Lean v4.32.0 and macOS ARM64, 22 lookup workloads ran in three processes,
+with nine samples per workload per process and 20 ms target batches. The
+equal-weight geometric mean of median paired verified/native time ratios was
+**1.005×** (**1.000×** excluding empty maps); verified/`Std.HashMap` was
+**1.463×**. Native and verified HAMT queries shared a tree; `Std.HashMap` used
+its own representation. These figures describe warmed lookup costs on this
+machine. Samples are in `Benchmarks/results/find.json`; reproduction commands
+are in [Benchmarks/README.md](../Benchmarks/README.md).
 
 ## Insertion traversal
 

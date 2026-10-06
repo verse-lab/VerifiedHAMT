@@ -46,6 +46,35 @@ development also proves:
 - The native empty map is `Valid` and contains no keys (`valid_empty`,
   `not_mem_empty`).
 
+## Value lookup
+
+`VerifiedHAMT.find?` (`Find.lean`) follows the same hash route and first-match
+collision scan as upstream, with checked array bounds and structural termination.
+Its specification is the independent structural binding relation:
+
+```lean
+theorem find?_eq_some_iff (map : Lean.PersistentHashMap α β)
+    (wf : Valid map) (hu : Unique map.root) (key : α) (value : β) :
+    find? map key = some value ↔ MapsTo key value map
+
+theorem find?_eq_none_iff (map : Lean.PersistentHashMap α β)
+    (wf : Valid map) (key : α) : find? map key = none ↔ ¬ Mem key map
+```
+
+`findNode_sound` needs neither routing nor uniqueness: a successful result is
+always stored. `findNode_exists_of_hasKey` needs routing alone. The `some` iff
+needs uniqueness because a duplicate-key collision bucket can store multiple
+values while lookup returns only the first. The `none` iff and
+`find?_isSome_eq_contains` do not need uniqueness. Values need neither `BEq` nor
+`Inhabited`; a stored `none` value is distinct from an absent key.
+
+`find?_insert`, `find?_insert_self`, and `find?_insert_of_ne` prove last-write
+lookup behavior from the binding insertion law. `findD` is `(find? m k).getD d`;
+`findD_eq_of_mapsTo`, `findD_eq_of_not_mem`, `findD_empty`, and `findD_insert`
+prove its value/default and update behavior. The bundled `Map` exports these
+theorems without invariant hypotheses, with scoped simp rules for empty maps
+and insertions. Short malformed arrays return `none`.
+
 ## Insertion
 
 `VerifiedHAMT.insert` (`Insert.lean`) is a total insertion on the same node types.
@@ -119,12 +148,12 @@ Compiled code uses the implementations, while proofs unfold the specifications.
 
 ## Relationship to Lean's implementation
 
-`VerifiedHAMT.contains` and `VerifiedHAMT.insert` use Lean's existing `Node` and
+`VerifiedHAMT.contains`, `VerifiedHAMT.find?`, and `VerifiedHAMT.insert` use Lean's existing `Node` and
 `Entry` types, with the same hash masking and shifting, key comparisons,
 collision scan, and promotion as the native implementation.
 
 The theorems are about these total functions, not upstream's `partial` helpers
-such as `containsAux`, `containsAtAux`, and `insertAux`. Those constants are
+such as `containsAux`, `containsAtAux`, `findAux`, `findAtAux`, and `insertAux`. Those constants are
 opaque to the kernel and expose no equations for their runtime bodies, so
 equivalence with them cannot be proved. This is a limitation of the available
 logical interface, not merely a missing proof, and the project adds no axiom
@@ -136,8 +165,8 @@ Runtime comparisons with upstream are regression tests and benchmarks, not
 equivalence proofs.
 
 Consequently, a map built by upstream's `insert` needs a separately established
-`Valid` proof before the lookup theorem applies to it. Value lookup (`find?`) and
-deletion are not verified.
+`Valid` proof before the lookup theorem applies to it; the successful-value iff
+also needs `Unique`. Deletion is not verified.
 
 ## Trusted base
 
@@ -164,13 +193,24 @@ checks below are compiler regression tests, not theorems.
   threshold, manually built root buckets, duplicate keys, malformed arrays, and a
   tree deeper than the promotion limit. The structural comparator is a `partial`
   test helper; neither it nor upstream `find?` is used in the proofs.
+- `VerifiedHAMTTests/Find.lean`: generic-value proof examples, axiom checks,
+  duplicate-key and misplaced-key counterexamples, empty/malformed arrays,
+  out-of-range collision suffixes, and nested `Option` values. Synthetic runtime
+  checks compare bundled and raw lookup with upstream HAMT, `Std.HashMap`, and a
+  list model after insertions, overwrites, and on retained snapshots. Raw lookup
+  is also compared after upstream deletion, without claiming a deletion proof.
+  Hashes include default, identity, mixed, shared-prefix, constant, and high-bit
+  hashes; `Name` keys and trees deeper than the promotion limit are covered.
+  `ofList_lookup_eq_std` and `ofList_findD_eq_std` additionally prove lookup
+  equality with `Std.HashMap.ofList` for arbitrary lists, including duplicates,
+  using the standard library's insertion equations.
 - `VerifiedHAMTTests/Map.lean`, `VerifiedHAMTTests/Set.lean`: client proofs without
   invariant hypotheses, collection notation, membership decisions, imports with
   supplied proofs, bulk construction with duplicate keys, promotion, overwrites,
   sizes, and retained snapshots. The set suite also compares against upstream's
   `PersistentHashSet` and a list model.
 - `VerifiedHAMTTests/MapIR.lean`, `VerifiedHAMTTests/SetIR.lean`: after proof
-  erasure, the bundled `Nat` insertion and lookup compile to the same IR
+  erasure, the bundled `Nat` insertion, membership, `find?`, and `findD` compile to the same IR
   signatures and bodies, including ownership annotations, as direct calls on
   `SizedRaw`, ignoring only declaration names.
 - `VerifiedHAMTTests/ReleaseIR.lean`: in the compiled insertion traversals, both

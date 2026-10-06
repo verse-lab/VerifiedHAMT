@@ -1,6 +1,6 @@
 # VerifiedHAMT
 
-Verified membership queries and insertion for Lean's native hash array mapped
+Verified membership queries, value lookup, and insertion for Lean's native hash array mapped
 trie, `Lean.PersistentHashMap`, with bundled map and set APIs whose theorems need
 no invariant hypotheses. Targets Lean **v4.32.0**; no external packages are
 required.
@@ -18,6 +18,8 @@ def exampleMap : Map Nat String :=
   Map.ofList [(7, "old"), (3, "three"), (7, "new")]
 
 #eval exampleMap.contains 7 -- true
+#eval exampleMap.find? 7 -- some "new"
+#eval exampleMap.findD 9 "missing" -- "missing"
 #eval decide (3 ∈ exampleMap) -- true
 #eval exampleMap.size -- 2
 
@@ -35,7 +37,7 @@ invariants, `Valid` (every key is in the slot its hash selects) and `Unique` (no
 duplicate keys), following the
 [`Std.TreeMap` / `Std.DTreeMap` design](https://lean-lang.org/doc/api/Std/Data/DTreeMap/Basic.html#Std.DTreeMap).
 `∅`, `{}`, literals such as `{(1, "one")}`, `insert`, and `ofList` maintain them
-automatically. Maps provide `contains`, decidable `∈`, `size`, `keys`, and the
+automatically. Maps provide `contains`, `find?`, `findD`, decidable `∈`, `size`, `keys`, and the
 binding relation `MapsTo`. Keys need `[BEq α] [Hashable α]`, plus `[LawfulBEq α]`
 for insertion and the correctness theorems; values need no instances. The simp
 lemmas are scoped: `open scoped VerifiedHAMT.Map`.
@@ -126,6 +128,11 @@ to reproduce them. The existing `Set` API is unchanged.
 | Theorem | Statement |
 | --- | --- |
 | `Map.contains_eq_true_iff` | `m.contains k = true ↔ k ∈ m` |
+| `Map.find?_eq_some_iff` | `m.find? k = some v ↔ m.MapsTo k v` |
+| `Map.find?_eq_none_iff` | `m.find? k = none ↔ k ∉ m` |
+| `Map.find?_isSome_eq_contains` | `(m.find? k).isSome = m.contains k` |
+| `Map.find?_insert` | `(m.insert k v).find? q = if q == k then some v else m.find? q` |
+| `Map.findD_insert` | `(m.insert k v).findD q d = if q == k then v else m.findD q d` |
 | `Map.mem_insert_iff` | `q ∈ m.insert k v ↔ q = k ∨ q ∈ m` |
 | `Map.contains_insert` | `(m.insert k v).contains q = ((q == k) \|\| m.contains q)` |
 | `Map.mapsTo_insert_iff` | `(m.insert k v).MapsTo q w ↔ (q = k ∧ w = v) ∨ (q ≠ k ∧ m.MapsTo q w)` |
@@ -146,13 +153,14 @@ equal to simple specifications and installed as `@[csimp]` rewrites.
 
 ## Scope
 
-- The theorems concern this project's total `VerifiedHAMT.contains` and
+- The theorems concern this project's total `VerifiedHAMT.contains`, `find?`, `findD`, and
   `VerifiedHAMT.insert`. These run on Lean's native `Node` and `Entry` types with
   the same hashing scheme and bucket promotion as upstream, but are not proved
   equivalent to upstream's `partial` implementations (`containsAux`,
   `insertAux`, …), which are opaque to the kernel. Tests compare against those
   at runtime only.
-- Value lookup (`find?`) and deletion are not yet verified.
+- Deletion is not yet verified. Upstream value lookup is compared at runtime;
+  no formal equality with its opaque `partial` implementation is assumed.
 
 ## Build and test
 
@@ -181,6 +189,7 @@ hash functions, including a constant one.
 | `VerifiedHAMT/Basic.lean` | structural membership and bindings, `Valid`, `Unique`, empty map |
 | `VerifiedHAMT/Size.lean` | structural key list and count |
 | `VerifiedHAMT/Contains.lean` | total `contains` and its correctness proofs |
+| `VerifiedHAMT/Find.lean` | total `find?`, `findD`, structural binding correctness and insertion laws |
 | `VerifiedHAMT/Bindings.lean` | `Updated` and lemmas for replacing an entries slot |
 | `VerifiedHAMT/Insert.lean` | total insertion with cached hashes |
 | `VerifiedHAMT/InsertProofs.lean` | invariant preservation; membership, binding, and key-count laws |

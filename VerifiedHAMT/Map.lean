@@ -2,6 +2,7 @@ module
 
 public import VerifiedHAMT.InsertProofs
 public import VerifiedHAMT.ContainsThenInsert
+public import VerifiedHAMT.Find
 import all Lean.Data.PersistentHashMap
 
 @[expose] public section
@@ -76,6 +77,14 @@ instance [LawfulBEq α] : LawfulSingleton (α × β) (Map α β) := ⟨fun _ => 
 @[inline] def contains (map : Map α β) (key : α) : Bool :=
   VerifiedHAMT.contains map.toRaw key
 
+/-- Verified value lookup; `none` means that the key is absent. -/
+@[inline] def find? (map : Map α β) (key : α) : Option β :=
+  VerifiedHAMT.find? map.toRaw key
+
+/-- Verified lookup with a caller-supplied default for an absent key. -/
+@[inline] def findD (map : Map α β) (key : α) (fallback : β) : β :=
+  VerifiedHAMT.findD map.toRaw key fallback
+
 /-- Membership remains structural, independently of the query implementation. -/
 instance : Membership α (Map α β) := ⟨fun map key => VerifiedHAMT.Mem key map.toRaw⟩
 
@@ -117,6 +126,27 @@ theorem contains_eq_false_iff [LawfulBEq α] (map : Map α β) (key : α) :
     map.contains key = false ↔ key ∉ map :=
   VerifiedHAMT.contains_eq_false_iff map.toRaw map.valid key
 
+theorem find?_eq_some_iff [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
+    map.find? key = some value ↔ map.MapsTo key value :=
+  VerifiedHAMT.find?_eq_some_iff map.toRaw map.valid map.unique key value
+
+theorem find?_eq_none_iff [LawfulBEq α] (map : Map α β) (key : α) :
+    map.find? key = none ↔ key ∉ map :=
+  VerifiedHAMT.find?_eq_none_iff map.toRaw map.valid key
+
+theorem find?_isSome_eq_contains [LawfulBEq α] (map : Map α β) (key : α) :
+    (map.find? key).isSome = map.contains key :=
+  VerifiedHAMT.find?_isSome_eq_contains map.toRaw map.valid key
+
+theorem findD_eq_of_mapsTo [LawfulBEq α] (map : Map α β)
+    (key : α) (value fallback : β) (hb : map.MapsTo key value) :
+    map.findD key fallback = value :=
+  VerifiedHAMT.findD_eq_of_mapsTo map.toRaw map.valid map.unique key value fallback hb
+
+theorem findD_eq_of_not_mem [LawfulBEq α] (map : Map α β)
+    (key : α) (fallback : β) (hm : key ∉ map) : map.findD key fallback = fallback :=
+  VerifiedHAMT.findD_eq_of_not_mem map.toRaw map.valid key fallback hm
+
 /-- Decide structural membership using the verified query. -/
 instance [LawfulBEq α] (map : Map α β) (key : α) : Decidable (key ∈ map) :=
   decidable_of_iff (map.contains key = true) (contains_eq_true_iff map key)
@@ -148,6 +178,38 @@ theorem MapsTo.functional {map : Map α β} {key : α} {v w : β}
 
 @[scoped simp] theorem contains_empty [LawfulBEq α] (key : α) :
     (∅ : Map α β).contains key = false := VerifiedHAMT.contains_empty key
+
+@[scoped simp] theorem find?_empty [LawfulBEq α] (key : α) :
+    (∅ : Map α β).find? key = none := VerifiedHAMT.find?_empty key
+
+@[scoped simp] theorem findD_empty [LawfulBEq α] (key : α) (fallback : β) :
+    (∅ : Map α β).findD key fallback = fallback := VerifiedHAMT.findD_empty key fallback
+
+@[scoped simp] theorem find?_insert [LawfulBEq α]
+    (map : Map α β) (key q : α) (value : β) :
+    (map.insert key value).find? q = if q == key then some value else map.find? q :=
+  VerifiedHAMT.find?_insert map.toRaw map.valid map.unique key q value
+
+@[scoped simp] theorem find?_insert_self [LawfulBEq α]
+    (map : Map α β) (key : α) (value : β) :
+    (map.insert key value).find? key = some value :=
+  VerifiedHAMT.find?_insert_self map.toRaw map.valid map.unique key value
+
+theorem find?_insert_of_ne [LawfulBEq α]
+    (map : Map α β) (key q : α) (value : β) (hne : q ≠ key) :
+    (map.insert key value).find? q = map.find? q :=
+  VerifiedHAMT.find?_insert_of_ne map.toRaw map.valid map.unique key q value hne
+
+@[scoped simp] theorem findD_insert [LawfulBEq α]
+    (map : Map α β) (key q : α) (value fallback : β) :
+    (map.insert key value).findD q fallback =
+      if q == key then value else map.findD q fallback :=
+  VerifiedHAMT.findD_insert map.toRaw map.valid map.unique key q value fallback
+
+@[scoped simp] theorem findD_insert_self [LawfulBEq α]
+    (map : Map α β) (key : α) (value fallback : β) :
+    (map.insert key value).findD key fallback = value :=
+  VerifiedHAMT.findD_insert_self map.toRaw map.valid map.unique key value fallback
 
 @[scoped simp] theorem size_empty : (∅ : Map α β).size = 0 := rfl
 

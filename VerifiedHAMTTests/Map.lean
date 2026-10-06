@@ -82,6 +82,18 @@ abbrev SizedRaw := VerifiedHAMT.SizedRaw
 @[noinline] def rawContains (map : SizedRaw Nat Nat) (key : Nat) : Bool :=
   VerifiedHAMT.contains map.toRaw key
 
+@[noinline] def wrappedFind (map : Map Nat Nat) (key : Nat) : Option Nat :=
+  map.find? key
+
+@[noinline] def rawFind (map : SizedRaw Nat Nat) (key : Nat) : Option Nat :=
+  VerifiedHAMT.find? map.toRaw key
+
+@[noinline] def wrappedFindD (map : Map Nat Nat) (key fallback : Nat) : Nat :=
+  map.findD key fallback
+
+@[noinline] def rawFindD (map : SizedRaw Nat Nat) (key fallback : Nat) : Nat :=
+  VerifiedHAMT.findD map.toRaw key fallback
+
 /-- Exercise bulk construction, collision promotion, snapshots, and the public
 membership decision through the bundled API. Native value lookup is only a test oracle. -/
 def run : IO Unit := do

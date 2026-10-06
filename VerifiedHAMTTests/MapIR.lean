@@ -20,7 +20,9 @@ run_meta do
     | .extern .. => none
   for (wrapped, raw) in [
       (``VerifiedHAMT.MapTests.wrappedInsert, ``VerifiedHAMT.MapTests.rawInsert),
-      (``VerifiedHAMT.MapTests.wrappedContains, ``VerifiedHAMT.MapTests.rawContains)] do
+      (``VerifiedHAMT.MapTests.wrappedContains, ``VerifiedHAMT.MapTests.rawContains),
+      (``VerifiedHAMT.MapTests.wrappedFind, ``VerifiedHAMT.MapTests.rawFind),
+      (``VerifiedHAMT.MapTests.wrappedFindD, ``VerifiedHAMT.MapTests.rawFindD)] do
     let some wrappedIR := (IR.findEnvDecl env wrapped).bind normalized
       | throwError "Missing function IR for {wrapped}"
     let some rawIR := (IR.findEnvDecl env raw).bind normalized

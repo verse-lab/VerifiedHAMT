@@ -20,6 +20,10 @@ name = "containsBench"
 root = "Benchmarks.Contains"
 
 [[lean_exe]]
+name = "findBench"
+root = "Benchmarks.Find"
+
+[[lean_exe]]
 name = "insertBench"
 root = "Benchmarks.Insert"
 

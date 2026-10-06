@@ -4,6 +4,7 @@ module
 -- Import modules here that should be built as part of the library.
 public import VerifiedHAMT.Basic
 public import VerifiedHAMT.Contains
+public import VerifiedHAMT.Find
 public import VerifiedHAMT.Bindings
 public import VerifiedHAMT.Insert
 public import VerifiedHAMT.InsertSized

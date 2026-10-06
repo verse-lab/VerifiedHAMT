@@ -17,11 +17,13 @@ scripts build the required Lake targets automatically.
 python3 Benchmarks/inspect.py
 python3 Benchmarks/inspect_insert.py
 python3 Benchmarks/inspect_set.py
+python3 Benchmarks/inspect_find.py
 
 python3 Benchmarks/run.py --benchmark contains --runs 3 --samples 9 --target-ms 20 --output Benchmarks/results/contains.json
 python3 Benchmarks/run.py --benchmark insert --runs 3 --samples 9 --target-ms 20 --output Benchmarks/results/insert.json
 python3 Benchmarks/run.py --benchmark setContains --runs 3 --samples 9 --target-ms 20 --output Benchmarks/results/set-contains.json
 python3 Benchmarks/run.py --benchmark setInsert --runs 3 --samples 9 --target-ms 20 --output Benchmarks/results/set-insert.json
+python3 Benchmarks/run_find.py --runs 3 --samples 9 --target-ms 20 --output Benchmarks/results/find.json
 ```
 
 Reports and compiler evidence are written to the ignored `Benchmarks/results/`
@@ -34,6 +36,7 @@ a JSON file path.
 | Source | Operations |
 | --- | --- |
 | [Contains.lean](Contains.lean) | Raw map lookup with empty maps and 0%, 50%, or 100% hits |
+| [Find.lean](Find.lean) | Value lookup against native HAMT and `Std.HashMap.get?`, with empty maps and 0%, 50%, or 100% hits |
 | [Insert.lean](Insert.lean) | Map construction, value replacement, extension, bucket promotion, and retained snapshots |
 | [SetContains.lean](SetContains.lean) | Public set lookup with the same hit-rate coverage |
 | [SetInsert.lean](SetInsert.lean) | Set construction, duplicate insertion, extension, bucket promotion, and retained snapshots |
@@ -69,6 +72,14 @@ These are warmed microbenchmarks without CPU affinity or frequency control.
 Compare paired runs on the target machine and inspect variation across processes;
 timings and ratios depend on hardware, compiler, and workload.
 
+The separate [run_find.py](run_find.py) runner compares three implementations in
+22 scenarios. It rotates their execution order; `--samples` must be divisible
+by three. Verified and native HAMT queries share a tree; `Std.HashMap` is built
+with the same synthetic bindings. One third of seed bindings are overwritten
+before timing. Queries and value-dependent checksums are validated, and samples
+are saved to `Benchmarks/results/find.json`. See the
+[recorded comparison](../docs/Implementation.md#value-lookup).
+
 ## Compiler inspection
 
 [inspect.py](inspect.py), [inspect_insert.py](inspect_insert.py), and
@@ -80,6 +91,13 @@ traversal's container and entries-node reuse, the absence of a separate membersh
 lookup, and that varying insertion rounds remain in the loop. The set inspector reruns
 [VerifiedHAMTTests/SetIR.lean](../VerifiedHAMTTests/SetIR.lean) to compare wrapper and raw verified entry
 points after proof erasure.
+
+[inspect_find.py](inspect_find.py) saves value-lookup IR and generated C
+in `Benchmarks/results/find-ir/`, verifies clock/batch/checksum ordering in 12
+timers, checks direct lookup calls in nine specialized query loops, and builds
+the bundled/raw `find?` and `findD` IR checks. Its compiler metadata includes the
+executable hash for matching evidence to the timed binary. It does not inspect
+assembly or require identical native/verified traversal bodies.
 
 Assembly is generated from Lake's actual C compilation command by replacing
 `-c` with `-S`. Assembly extraction and automated assembly checks currently target

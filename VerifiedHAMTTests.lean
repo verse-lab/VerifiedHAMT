@@ -1,4 +1,5 @@
 import VerifiedHAMTTests.Contains
+import VerifiedHAMTTests.Find
 import VerifiedHAMTTests.Insert
 import VerifiedHAMTTests.Map
 import VerifiedHAMTTests.Set
@@ -12,6 +13,7 @@ import VerifiedHAMTTests.SetWithoutValArrayIR
 
 def main : IO Unit := do
   VerifiedHAMT.Tests.run
+  VerifiedHAMT.FindTests.run
   VerifiedHAMT.InsertTests.run
   VerifiedHAMT.MapTests.run
   VerifiedHAMT.SetTests.run
