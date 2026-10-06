@@ -186,10 +186,9 @@ a Lean upgrade. The assembly checks currently cover macOS ARM64.
 
 ## Recorded results
 
-The run on 2026-10-05 (Asia/Singapore) used Lean 4.32.0 Release and a native ARM64
-benchmark executable on macOS 26.3.1. The Python launcher reports x86_64 under
-Rosetta; that is not the benchmark executable's architecture. Three processes
-with ten samples each produced 1,200 validated five-backend samples. Source and
+The recorded run used Lean 4.32.0 Release and a native ARM64 benchmark
+executable. Three processes with ten samples each produced 1,200 validated
+five-backend samples. Source and
 binary hashes, plus the inspected benchmark C hash, are saved in the report.
 These measurements precede the inlining follow-up below.
 

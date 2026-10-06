@@ -65,7 +65,7 @@ private def runCase [BEq α] [LawfulBEq α] [Hashable α] (label : String) (make
   let queryCount := 8192
   let mut queries := Array.mkEmpty queryCount
   let mut expectedHits : UInt64 := 0
-  let mut seed : UInt64 := 20261001
+  let mut seed : UInt64 := 0x5eed
   for i in [0:queryCount] do
     seed := nextSeed seed
     let id := (seed >>> 32).toNat % (max size 1)

@@ -89,11 +89,13 @@ def main():
     trace = json.loads(Path(str(c_path) + ".o.export.trace").read_text())
     command = next(entry["message"][3:] for entry in trace["log"] if entry["message"].startswith(".> "))
     compile_args = shlex.split(command)
-    asm_path = output / "benchmark.s"
+    asm_path = root / ".lake/inspection/SetWithoutValArray.s"
+    asm_path.parent.mkdir(parents=True, exist_ok=True)
     compile_args[compile_args.index("-c")] = "-S"
     compile_args[compile_args.index("-o") + 1] = str(asm_path)
     subprocess.run(compile_args, cwd=root, check=True)
     assembly = asm_path.read_text()
+    (output / "benchmark.s").write_text(helper.redact_paths(assembly, root))
     lean = subprocess.check_output(["lake", "env", "lean", "--version"], cwd=root, text=True).strip()
     asm_checked = []
     if "arm64-apple" in lean:
@@ -115,7 +117,7 @@ def main():
         "timed_nat_and_name_workers_with_reuse_and_direct_calls": specialized,
         "c_timers_checked": timers,
         "arm64_workers_checked": asm_checked,
-        "assembly_command": compile_args,
+        "assembly_command": [helper.redact_paths(arg, root) for arg in compile_args],
         "generated_c_sha256": {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
     }
     (output / "compiler.json").write_text(json.dumps(metadata, indent=2) + "\n")

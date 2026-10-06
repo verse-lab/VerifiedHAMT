@@ -96,15 +96,16 @@ def main():
                     raise RuntimeError(f"Incorrect assembly timer order: {name}")
                 asm_timers.append(name)
             asm_selected.append(body)
-        (output / "insert.arm64.txt").write_text("; Same Lake clang flags, replacing -c with -S.\n\n" +
-                                                "\n\n".join(asm_selected) + "\n")
+        (output / "insert.arm64.txt").write_text(helper.redact_paths(
+            "; Same Lake clang flags, replacing -c with -S.\n\n" +
+            "\n\n".join(asm_selected) + "\n", root))
     metadata = {
         "lean": lean,
         "source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in
                           ("VerifiedHAMT/Insert.lean", "VerifiedHAMT/Basic.lean", "Benchmarks/Insert.lean",
                            "Benchmarks/InspectInsertIR.lean", "Benchmarks/inspect_insert.py")},
         "generated_c_sha256": hashlib.sha256(c_path.read_bytes()).hexdigest(),
-        "assembly_command": compile_args,
+        "assembly_command": [helper.redact_paths(arg, root) for arg in compile_args],
         "c_timer_order_checked": timers, "arm64_timer_order_checked": asm_timers,
         "specialized_traversals": hot, "round_loops_for_inspection": loops,
         "specialized_helpers": helpers,

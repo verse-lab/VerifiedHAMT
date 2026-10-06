@@ -46,7 +46,7 @@ that the child came from the array, which `insertNoExpand` needs for termination
 `insertCollisionAux` scans and updates a collision node directly, so its
 constructor can be reused.
 
-The refactoring in `f75c455` instead used `Array.modifyWithCallBackProof`, an
+An earlier refactoring instead used `Array.modifyWithCallBackProof`, an
 `Array.modify` whose callback also received the membership proof. Through
 `implemented_by`, it ran an unsafe function that stores `box(0)` like core's.
 It was removed for three reasons:
@@ -97,10 +97,9 @@ count instead. TreeMap uses ordinary insertion and a size comparison there, not 
 leave an existing value unchanged, so it cannot replace the overwriting
 `Map.insert`.
 
-## Size-insertion tuning, 2026-10-02
+## Size-insertion tuning
 
-The measurements in this section were taken at commit `e2daa26`. The design was
-reached in three steps:
+The design was reached in three steps:
 
 1. Fusing `contains` and `insert` into a traversal returning `Bool × Node` removed
    the second lookup but made insertion slower. Generated C showed a pair
@@ -133,11 +132,10 @@ and 27.3% lower than the two-pass version's, and all 18 workloads improved again
 both. A 5.1% aggregate overhead remains relative to the version without a size.
 These ratios describe these workloads on this machine, and normalizing by native
 timings does not remove all measurement noise. The raw reports, source snapshots,
-and generated-code evidence are kept locally in the untracked
-`Benchmarks/results/fused-insert-20261002/` and
-`Benchmarks/results/sized-carrier-20261002/` directories.
+and generated-code evidence are kept locally in untracked comparison directories
+under `Benchmarks/results/`.
 
-The refactoring in `f75c455` moved the sized traversal's slot clearing after the
-recursive call, and a pilot then measured set insertion at 2.34× native. With the
-clearing restored before the call, a full evaluation with the settings above
-measured 1.071×.
+The `Array.modifyWithCallBackProof` refactoring moved the sized traversal's slot
+clearing after the recursive call, and a pilot then measured set insertion at
+2.34× native. With the clearing restored before the call, a full evaluation with
+the settings above measured 1.071×.

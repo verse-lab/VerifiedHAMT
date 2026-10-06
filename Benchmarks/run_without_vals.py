@@ -3,7 +3,6 @@
 
 import argparse
 import csv
-from datetime import datetime, timezone
 import hashlib
 import io
 import json
@@ -97,7 +96,6 @@ def main():
                            root / "Benchmarks/SetWithoutValArray.lean",
                            root / "Benchmarks/SetWithoutValArrayMemory.lean", Path(__file__).resolve()})
     report = {
-        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         "environment": {"platform": platform.platform(), "machine": platform.machine(),
                         "lean": subprocess.check_output(["lake", "env", "lean", "--version"],
                                                        cwd=root, text=True).strip()},

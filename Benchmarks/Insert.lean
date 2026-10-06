@@ -83,7 +83,7 @@ private def measureTotal [BEq α] [Hashable α]
 
 private def shuffledIds (count : Nat) : Array Nat := Id.run do
   let mut ids := (List.range count).toArray
-  let mut state : UInt64 := 20261001
+  let mut state : UInt64 := 0x5eed
   for i in [0:count] do
     state := state * 6364136223846793005 + 1442695040888963407
     let j := i + (state >>> 32).toNat % (count - i)
@@ -191,7 +191,7 @@ def run (samples targetMs : Nat) : IO Unit := do
   IO.println "case,mode,base_size,ops_per_round,rounds,sample,native_first,operations,native_ns,total_ns,checksum"
   for count in #[32, 4096, 65536] do
     runNat "nat-default" "build" hash 0 count samples targetMs
-  runNat "nat-mixed" "build" (fun n => mixHash 20261001 n.toUInt64) 0 4096 samples targetMs
+  runNat "nat-mixed" "build" (fun n => mixHash 0x5eed n.toUInt64) 0 4096 samples targetMs
   runNat "nat-prefix" "build" (fun n => n.toUInt64 <<< 15) 0 4096 samples targetMs
   runNat "nat-collision" "build" (fun _ => 0) 0 128 samples targetMs
   let nameKey := fun n => Lean.Name.num (.str .anonymous "insert-bench") n

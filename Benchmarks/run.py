@@ -3,7 +3,6 @@
 
 import argparse
 import csv
-from datetime import datetime, timezone
 import hashlib
 import io
 import json
@@ -88,7 +87,6 @@ def main():
     report = {
         "schema_version": 2,
         "benchmark": kind,
-        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         "environment": {
             "python_platform": platform.platform(), "python_machine": platform.machine(),
             "system": platform.system(), "os_release": platform.release(),
@@ -100,7 +98,7 @@ def main():
         "configuration": {"runs": args.runs, "samples_per_case_per_run": args.samples,
                           "target_ms_per_batch": args.target_ms,
                           **({"query_array_size": 8192} if lookup else {
-                              "shuffle_seed": 20261001,
+                              "shuffle_seed": 0x5eed,
                               "timed_scope": "insertion rounds, snapshot retention, 1-2 lookups per round, and release of completed maps",
                               "seed_ownership": "borrowed at round entry; subsequent maps consumed unless snapshots retained"}),
                           **({"seed_construction": "verified Set API, shared native representation for both APIs"}

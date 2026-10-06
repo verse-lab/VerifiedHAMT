@@ -37,6 +37,11 @@ def ir_body(ir, name):
     return match[0].strip()
 
 
+def redact_paths(text, root):
+    """Remove local repository and home paths from saved compiler evidence."""
+    return text.replace(str(root), "<repo>").replace(str(Path.home()), "<home>")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("Benchmarks/results"))
@@ -113,14 +118,16 @@ def main():
         nat_scan_equal = len(nat_scans) == 2 and nat_scans[0] == nat_scans[1]
         if not nat_scan_equal:
             raise RuntimeError("Nat collision scan assembly changed; review before claiming identical instructions")
-        (output / "contains.arm64.txt").write_text("; Same Lake clang flags, replacing -c with -S. Selected functions.\n\n" + "\n\n".join(asm_selected) + "\n")
+        (output / "contains.arm64.txt").write_text(redact_paths(
+            "; Same Lake clang flags, replacing -c with -S. Selected functions.\n\n" +
+            "\n\n".join(asm_selected) + "\n", root))
 
     metadata = {
         "lean": lean_version,
         "source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in
                           ("VerifiedHAMT/Basic.lean", "VerifiedHAMT/Contains.lean", "Benchmarks/Contains.lean")},
         "generated_c_sha256": hashlib.sha256(c_path.read_bytes()).hexdigest(),
-        "assembly_command": compile_args,
+        "assembly_command": [redact_paths(arg, root) for arg in compile_args],
         "collision_scan_ir_identical_modulo_name": scan_equal,
         "nat_collision_scan_arm64_identical_modulo_labels": nat_scan_equal,
         "c_timer_order_checked": timers,

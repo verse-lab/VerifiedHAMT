@@ -145,13 +145,14 @@ def inspect(root, output, helper, stem, lean):
                     raise RuntimeError(f"Missing assembly loop back edge: {name}")
                 asm_loops.append(name)
             asm_selected.append(body)
-        (output / f"{label}.arm64.txt").write_text("; Same Lake clang flags, replacing -c with -S.\n\n" +
-                                                  "\n\n".join(asm_selected) + "\n")
+        (output / f"{label}.arm64.txt").write_text(helper.redact_paths(
+            "; Same Lake clang flags, replacing -c with -S.\n\n" +
+            "\n\n".join(asm_selected) + "\n", root))
     print(f"{stem}: checked {len(timers)} C / {len(asm_timers)} ARM64 timers, "
           f"{len(loops)} varying C / {len(asm_loops)} ARM64 round loops; extracted {len(hot)} traversals.")
     return {
         "generated_c_sha256": hashlib.sha256(c_path.read_bytes()).hexdigest(),
-        "assembly_command": compile_args,
+        "assembly_command": [helper.redact_paths(arg, root) for arg in compile_args],
         "c_timer_order_checked": timers,
         "arm64_timer_order_checked": asm_timers,
         "c_round_rotation_dataflow_checked": loops,

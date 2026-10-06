@@ -216,7 +216,7 @@ def run : IO Unit := do
   checkPromotionBoundaries
   let mut checks ← checkManualNodes
   checks := checks + (← checkNat "default" hash)
-  checks := checks + (← checkNat "mixed" (fun n => mixHash 20261001 n.toUInt64))
+  checks := checks + (← checkNat "mixed" (fun n => mixHash 0x5eed n.toUInt64))
   checks := checks + (← checkNat "shared-prefix" (fun n => n.toUInt64 <<< 15))
   checks := checks + (← checkNat "constant" (fun _ => 0))
   checks := checks + (← checkNat "high-bits" (fun n => n.toUInt64 <<< 60))

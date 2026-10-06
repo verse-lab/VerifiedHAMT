@@ -91,7 +91,7 @@ private def sample (label mode : String) (size opCount expected samples targetMs
 
 private def shuffled (count : Nat) : Array Nat := Id.run do
   let mut ids := Array.range count
-  let mut state : UInt64 := 20261005
+  let mut state : UInt64 := 0xc0ffee
   for i in [0:count] do
     state := state * 6364136223846793005 + 1442695040888963407
     ids := ids.swapIfInBounds i (i + (state >>> 32).toNat % (count - i))
@@ -134,7 +134,7 @@ private def runCase [BEq α] [LawfulBEq α] [Hashable α]
     let hits := (mode.drop 9).toString.toNat!.min 100
     let mut queries := Array.mkEmpty opCount
     let mut expected := 0
-    let mut state : UInt64 := 20261005
+    let mut state : UInt64 := 0xc0ffee
     for i in [0:opCount] do
       state := state * 6364136223846793005 + 1442695040888963407
       let id := (state >>> 32).toNat % max size 1
@@ -182,7 +182,7 @@ def run (samples targetMs : Nat) : IO Unit := do
   IO.println "case,mode,size,ops,sample,first,rounds,native_ns,raw_ns,bundled_ns,bare_ns,keys_ns,checksum"
   for count in #[32, 4096, 65536] do
     runNat "nat-default" "build" hash 0 count samples targetMs
-  runNat "nat-mixed" "build" (fun n => mixHash 20261005 n.toUInt64) 0 4096 samples targetMs
+  runNat "nat-mixed" "build" (fun n => mixHash 0xc0ffee n.toUInt64) 0 4096 samples targetMs
   runNat "nat-prefix" "build" (fun n => n.toUInt64 <<< 15) 0 4096 samples targetMs
   runNat "nat-collision" "build" (fun _ => 0) 0 128 samples targetMs
   let nameKey := fun n => Lean.Name.num `keysOnlyBench n
