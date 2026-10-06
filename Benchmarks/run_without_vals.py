@@ -92,8 +92,8 @@ def main():
     memory = parse_csv(subprocess.check_output([str(binaries[1])], text=True, timeout=args.timeout))
     if len(memory) != 10:
         raise RuntimeError("incomplete memory report")
-    source_paths = sorted(set(root.glob("HAMTVerify/**/*.lean")) |
-                          {root / "HAMTVerify.lean", root / "lakefile.toml", root / "lean-toolchain",
+    source_paths = sorted(set(root.glob("VerifiedHAMT/**/*.lean")) |
+                          {root / "VerifiedHAMT.lean", root / "lakefile.toml", root / "lean-toolchain",
                            root / "Benchmarks/SetWithoutValArray.lean",
                            root / "Benchmarks/SetWithoutValArrayMemory.lean", Path(__file__).resolve()})
     report = {

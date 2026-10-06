@@ -1,6 +1,6 @@
 # Verification
 
-This document describes what HAMTVerify proves about Lean's native
+This document describes what VerifiedHAMT proves about Lean's native
 `Lean.PersistentHashMap` representation, and under which assumptions. The
 [README](../README.md) covers the bundled `Map` and `Set` APIs, whose theorems
 follow from the raw-map results here. Unless stated otherwise, theorems assume
@@ -24,7 +24,7 @@ the keys of different slots.
 
 ## Membership queries
 
-`HAMTVerify.contains` (`Contains.lean`) is a total version of the native query.
+`VerifiedHAMT.contains` (`Contains.lean`) is a total version of the native query.
 Its main theorem is:
 
 ```lean
@@ -48,7 +48,7 @@ development also proves:
 
 ## Insertion
 
-`HAMTVerify.insert` (`Insert.lean`) is a total insertion on the same node types.
+`VerifiedHAMT.insert` (`Insert.lean`) is a total insertion on the same node types.
 Like upstream, it overwrites existing values and creates collision nodes. Below
 the native depth limit of seven, a collision node holding at least four keys
 after the insertion is promoted to an entries node, which reinserts its keys in
@@ -119,7 +119,7 @@ Compiled code uses the implementations, while proofs unfold the specifications.
 
 ## Relationship to Lean's implementation
 
-`HAMTVerify.contains` and `HAMTVerify.insert` use Lean's existing `Node` and
+`VerifiedHAMT.contains` and `VerifiedHAMT.insert` use Lean's existing `Node` and
 `Entry` types, with the same hash masking and shifting, key comparisons,
 collision scan, and promotion as the native implementation.
 
@@ -150,12 +150,12 @@ checks below are compiler regression tests, not theorems.
 
 `lake test` checks the following suites:
 
-- `HAMTVerifyTests/Contains.lean`: proof examples, including duplicate collision
+- `VerifiedHAMTTests/Contains.lean`: proof examples, including duplicate collision
   keys, malformed arrays, and the misplaced-key counterexample.
   It compares the verified and upstream `contains` with a list model after every
   insertion, overwrite, and deletion and on retained snapshots, using default,
   identity, shared-prefix, constant, and high-bit hashes.
-- `HAMTVerifyTests/Insert.lean`: compares insertion with an association-list
+- `VerifiedHAMTTests/Insert.lean`: compares insertion with an association-list
   model using default, mixed, shared-prefix, constant, high-bit, and `Name`
   hashes. After every step it compares the complete node structure with
   upstream's, values with upstream `find?`, membership with the verified
@@ -164,15 +164,15 @@ checks below are compiler regression tests, not theorems.
   threshold, manually built root buckets, duplicate keys, malformed arrays, and a
   tree deeper than the promotion limit. The structural comparator is a `partial`
   test helper; neither it nor upstream `find?` is used in the proofs.
-- `HAMTVerifyTests/Map.lean`, `HAMTVerifyTests/Set.lean`: client proofs without
+- `VerifiedHAMTTests/Map.lean`, `VerifiedHAMTTests/Set.lean`: client proofs without
   invariant hypotheses, collection notation, membership decisions, imports with
   supplied proofs, bulk construction with duplicate keys, promotion, overwrites,
   sizes, and retained snapshots. The set suite also compares against upstream's
   `PersistentHashSet` and a list model.
-- `HAMTVerifyTests/MapIR.lean`, `HAMTVerifyTests/SetIR.lean`: after proof
+- `VerifiedHAMTTests/MapIR.lean`, `VerifiedHAMTTests/SetIR.lean`: after proof
   erasure, the bundled `Nat` insertion and lookup compile to the same IR
   signatures and bodies, including ownership annotations, as direct calls on
   `SizedRaw`, ignoring only declaration names.
-- `HAMTVerifyTests/ReleaseIR.lean`: in the compiled insertion traversals, both
+- `VerifiedHAMTTests/ReleaseIR.lean`: in the compiled insertion traversals, both
   the generic workers and their `Nat` specializations, every path to a recursive
   call first clears the entries slot with `Entry.null`.

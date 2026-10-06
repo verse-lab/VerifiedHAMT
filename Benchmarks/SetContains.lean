@@ -1,12 +1,12 @@
-import HAMTVerify
+import VerifiedHAMT
 
 /-!
-Native-code benchmark of HAMTVerify.Set.contains and Lean.PersistentHashSet.contains.
+Native-code benchmark of VerifiedHAMT.Set.contains and Lean.PersistentHashSet.contains.
 Verified set construction, query generation, validation, warmup, and calibration are not
 timed. Paired samples alternate execution order and check both checksums.
 -/
 
-namespace HAMTVerify.SetContainsBenchmarks
+namespace VerifiedHAMT.SetContainsBenchmarks
 
 private structure Measurement where
   nanos : Nat
@@ -24,12 +24,12 @@ private structure Measurement where
   return checksum
 
 @[noinline] private def totalBatch [BEq α] [Hashable α]
-    (map : @& HAMTVerify.Set α) (queries : @& Array α)
+    (map : @& VerifiedHAMT.Set α) (queries : @& Array α)
     (rounds : Nat) : UInt64 := Id.run do
   let mut checksum : UInt64 := 0
   for _ in [0:rounds] do
     for key in queries do
-      if HAMTVerify.Set.contains map key then checksum := checksum + 1
+      if VerifiedHAMT.Set.contains map key then checksum := checksum + 1
   return checksum
 
 private def measureNative [BEq α] [Hashable α]
@@ -44,7 +44,7 @@ private def measureNative [BEq α] [Hashable α]
   return ⟨stop - start, checksum⟩
 
 private def measureTotal [BEq α] [Hashable α]
-    (map : HAMTVerify.Set α) (queries : Array α)
+    (map : VerifiedHAMT.Set α) (queries : Array α)
     (rounds : Nat) : IO Measurement := do
   let start ← IO.monoNanosNow
   let checksum := totalBatch map queries rounds
@@ -57,7 +57,7 @@ private def nextSeed (seed : UInt64) : UInt64 :=
 
 private def runCase [BEq α] [LawfulBEq α] [Hashable α] (label : String) (makeKey : Nat → α)
     (size hitPercent samples targetMs : Nat) : IO Unit := do
-  let mut map : HAMTVerify.Set α := ∅
+  let mut map : VerifiedHAMT.Set α := ∅
   for i in [0:size] do
     map := map.insert (makeKey i)
   -- Both timed APIs observe exactly the same underlying tree.
@@ -73,7 +73,7 @@ private def runCase [BEq α] [LawfulBEq α] [Hashable α] (label : String) (make
     let key := makeKey (if isHit then id else size + id)
     -- Independent expected membership follows from inserted IDs, not one of
     -- the implementations being measured. Check every query before timing.
-    unless native.contains key == isHit && HAMTVerify.Set.contains map key == isHit do
+    unless native.contains key == isHit && VerifiedHAMT.Set.contains map key == isHit do
       throw <| IO.userError s!"{label}: incorrect result for query {i}"
     if isHit then expectedHits := expectedHits + 1
     queries := queries.push key
@@ -127,7 +127,7 @@ def run (samples targetMs : Nat) : IO Unit := do
     runCase "name-default" (fun n => Lean.Name.num (.str .anonymous "bench") n)
       16384 hitPercent samples targetMs
 
-end HAMTVerify.SetContainsBenchmarks
+end VerifiedHAMT.SetContainsBenchmarks
 
 def main (args : List String) : IO Unit := do
   let (samples, targetMs) ← match args with
@@ -138,4 +138,4 @@ def main (args : List String) : IO Unit := do
     | _ => throw <| IO.userError "usage: setContainsBench [samples target_ms]"
   unless samples > 0 && targetMs > 0 do
     throw <| IO.userError "samples and target_ms must be positive"
-  HAMTVerify.SetContainsBenchmarks.run samples targetMs
+  VerifiedHAMT.SetContainsBenchmarks.run samples targetMs

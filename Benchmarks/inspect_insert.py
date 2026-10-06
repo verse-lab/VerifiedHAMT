@@ -38,20 +38,20 @@ def main():
             if not start < body.index(batch + "_", start) < body.index("lean_runtime_hold", start) < stop:
                 raise RuntimeError(f"Incorrect C timer order: {name}")
             timers.append(name)
-        traversal = (name.startswith("lp_HAMTVerify_Lean_PersistentHashMap_insertAux___at") or
-                     name.startswith("lp_HAMTVerify_HAMTVerify_insertNodeCached___at"))
+        traversal = (name.startswith("lp_VerifiedHAMT_Lean_PersistentHashMap_insertAux___at") or
+                     name.startswith("lp_VerifiedHAMT_VerifiedHAMT_insertNodeCached___at"))
         traversal = traversal and "___redArg(" in body.splitlines()[0] and "lean_obj_tag" in body
         if traversal:
             hot.append(name)
-            if "HAMTVerify_insertNodeCached___at" in name:
+            if "VerifiedHAMT_insertNodeCached___at" in name:
                 if "lean_apply_" in body or "lean_alloc_closure" in body:
                     raise RuntimeError(f"Indirect call or closure remains in cached traversal: {name}")
                 cached_checks.append(name)
         auxiliary = name.startswith((
-            "lp_HAMTVerify_Lean_PersistentHashMap_insertAtCollisionNodeAux___at",
-            "lp_HAMTVerify_HAMTVerify_insertCollision___at",
-            "lp_HAMTVerify_HAMTVerify_insertNoExpand___at",
-            "lp_HAMTVerify_HAMTVerify_rebuildCached___at",
+            "lp_VerifiedHAMT_Lean_PersistentHashMap_insertAtCollisionNodeAux___at",
+            "lp_VerifiedHAMT_VerifiedHAMT_insertCollision___at",
+            "lp_VerifiedHAMT_VerifiedHAMT_insertNoExpand___at",
+            "lp_VerifiedHAMT_VerifiedHAMT_rebuildCached___at",
         )) and "___redArg(" in body.splitlines()[0]
         if auxiliary:
             helpers.append(name)
@@ -101,7 +101,7 @@ def main():
     metadata = {
         "lean": lean,
         "source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in
-                          ("HAMTVerify/Insert.lean", "HAMTVerify/Basic.lean", "Benchmarks/Insert.lean",
+                          ("VerifiedHAMT/Insert.lean", "VerifiedHAMT/Basic.lean", "Benchmarks/Insert.lean",
                            "Benchmarks/InspectInsertIR.lean", "Benchmarks/inspect_insert.py")},
         "generated_c_sha256": hashlib.sha256(c_path.read_bytes()).hexdigest(),
         "assembly_command": compile_args,

@@ -1,18 +1,18 @@
-name = "HAMTVerify"
+name = "VerifiedHAMT"
 version = "0.1.0"
-defaultTargets = ["HAMTVerify"]
+defaultTargets = ["VerifiedHAMT"]
 testDriver = "containsTests"
 
 [[lean_lib]]
-name = "HAMTVerify"
+name = "VerifiedHAMT"
 
 [[lean_lib]]
-name = "HAMTVerifyTests"
-globs = ["HAMTVerifyTests.+"]
+name = "VerifiedHAMTTests"
+globs = ["VerifiedHAMTTests.+"]
 
 [[lean_exe]]
 name = "containsTests"
-root = "HAMTVerifyTests.Contains"
+root = "VerifiedHAMTTests.Contains"
 
 [[lean_exe]]
 name = "containsBench"

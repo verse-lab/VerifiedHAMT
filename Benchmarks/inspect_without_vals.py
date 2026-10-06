@@ -46,14 +46,14 @@ def main():
     helper = load_module("c_inspection", root / "Benchmarks/inspect.py")
     reuse = load_module("set_inspection", root / "Benchmarks/inspect_set.py")
     subprocess.run(["lake", "build", "setWithoutValArrayBench",
-                    "HAMTVerifyTests.SetWithoutValArrayIR", "HAMTVerifyTests.ReleaseIR"], cwd=root, check=True)
+                    "VerifiedHAMTTests.SetWithoutValArrayIR", "VerifiedHAMTTests.ReleaseIR"], cwd=root, check=True)
     for check in ("SetWithoutValArrayIR", "ReleaseIR"):
-        subprocess.run(["lake", "env", "lean", f"HAMTVerifyTests/{check}.lean"], cwd=root, check=True)
+        subprocess.run(["lake", "env", "lean", f"VerifiedHAMTTests/{check}.lean"], cwd=root, check=True)
     ir = subprocess.check_output(["lake", "env", "lean", "Benchmarks/InspectSetWithoutValArrayIR.lean"],
                                  cwd=root, text=True)
     (output / "keys-only.ir.txt").write_text(ir)
-    prefix = "lp_HAMTVerify_HAMTVerify_SetWithoutValArray_Raw_"
-    paths = [root / ".lake/build/ir/HAMTVerify/SetWithoutValArray/InsertSized.c",
+    prefix = "lp_VerifiedHAMT_VerifiedHAMT_SetWithoutValArray_Raw_"
+    paths = [root / ".lake/build/ir/VerifiedHAMT/SetWithoutValArray/InsertSized.c",
              root / ".lake/build/ir/Benchmarks/SetWithoutValArray.c"]
     selected, generic, specialized, timers = [], [], [], []
     for index, path in enumerate(paths):

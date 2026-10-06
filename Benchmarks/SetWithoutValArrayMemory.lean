@@ -1,4 +1,4 @@
-import HAMTVerify
+import VerifiedHAMT
 
 /-! Runtime storage accounting, outside all timed regions. This deliberately
 unsafe diagnostic uses the pinned Lean runtime ABI, never a proof or library API.
@@ -6,7 +6,7 @@ Count each reachable node, entry, and array once by address, including array
 capacity, and the cached-size carriers. Exclude key payloads, outer history
 arrays, and allocator metadata/pages. This is not process RSS. -/
 
-namespace HAMTVerify.KeysOnlyMemory
+namespace VerifiedHAMT.KeysOnlyMemory
 
 @[extern "lean_object_byte_size"]
 private unsafe opaque objectBytes {α : Type} (obj : @& α) : USize
@@ -68,7 +68,7 @@ private unsafe def runCase [BEq α] [LawfulBEq α] [Hashable α]
   for i in [0:size] do
     let key := keyOf i
     native := native.insert key
-    raw := HAMTVerify.insert raw key ()
+    raw := VerifiedHAMT.insert raw key ()
     bundled := bundled.insert key
     keys := keys.insert key
   let mut ns := #[]
@@ -82,7 +82,7 @@ private unsafe def runCase [BEq α] [LawfulBEq α] [Hashable α]
     bs := bs.push bundled
     let key := keyOf (size + i)
     native := native.insert key
-    raw := HAMTVerify.insert raw key ()
+    raw := VerifiedHAMT.insert raw key ()
     bundled := bundled.insert key
     keys := keys.insert key
   ns := ns.push native
@@ -125,6 +125,6 @@ unsafe def run : IO Unit := do
   runNat "nat-prefix" (fun n => n.toUInt64 <<< 15) 4096 512
   runNat "nat-collision" (fun _ => 0) 128 128
 
-end HAMTVerify.KeysOnlyMemory
+end VerifiedHAMT.KeysOnlyMemory
 
-unsafe def main : IO Unit := HAMTVerify.KeysOnlyMemory.run
+unsafe def main : IO Unit := VerifiedHAMT.KeysOnlyMemory.run

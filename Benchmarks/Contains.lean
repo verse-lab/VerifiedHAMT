@@ -1,4 +1,4 @@
-import HAMTVerify
+import VerifiedHAMT
 
 /-!
 Native-code benchmark of the public total and upstream partial `contains` APIs.
@@ -6,7 +6,7 @@ Map construction, query generation, validation, warmup, and calibration are not
 timed. Paired samples alternate execution order and check both checksums.
 -/
 
-namespace HAMTVerify.Benchmarks
+namespace VerifiedHAMT.Benchmarks
 
 private structure Measurement where
   nanos : Nat
@@ -29,7 +29,7 @@ private structure Measurement where
   let mut checksum : UInt64 := 0
   for _ in [0:rounds] do
     for key in queries do
-      if HAMTVerify.contains map key then checksum := checksum + 1
+      if VerifiedHAMT.contains map key then checksum := checksum + 1
   return checksum
 
 private def measureNative [BEq α] [Hashable α]
@@ -71,7 +71,7 @@ private def runCase [BEq α] [Hashable α] (label : String) (makeKey : Nat → �
     let key := makeKey (if isHit then id else size + id)
     -- Independent expected membership follows from inserted IDs, not one of
     -- the implementations being measured. Check every query before timing.
-    unless map.contains key == isHit && HAMTVerify.contains map key == isHit do
+    unless map.contains key == isHit && VerifiedHAMT.contains map key == isHit do
       throw <| IO.userError s!"{label}: incorrect result for query {i}"
     if isHit then expectedHits := expectedHits + 1
     queries := queries.push key
@@ -125,7 +125,7 @@ def run (samples targetMs : Nat) : IO Unit := do
     runCase "name-default" (fun n => Lean.Name.num (.str .anonymous "bench") n)
       16384 hitPercent samples targetMs
 
-end HAMTVerify.Benchmarks
+end VerifiedHAMT.Benchmarks
 
 def main (args : List String) : IO Unit := do
   let (samples, targetMs) ← match args with
@@ -136,4 +136,4 @@ def main (args : List String) : IO Unit := do
     | _ => throw <| IO.userError "usage: containsBench [samples target_ms]"
   unless samples > 0 && targetMs > 0 do
     throw <| IO.userError "samples and target_ms must be positive"
-  HAMTVerify.Benchmarks.run samples targetMs
+  VerifiedHAMT.Benchmarks.run samples targetMs

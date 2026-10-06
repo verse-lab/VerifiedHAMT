@@ -1,6 +1,6 @@
 # Benchmarks
 
-Tools for comparing HAMTVerify's map and set operations with Lean's native
+Tools for comparing VerifiedHAMT's map and set operations with Lean's native
 implementations. See the [project README](../README.md) for the APIs and
 correctness theorems, and [docs/Implementation.md](../docs/Implementation.md) for
 the design of the measured code and recorded tuning results. Run the paired
@@ -78,7 +78,7 @@ traversal code for review. Insertion inspection checks the cached traversal for
 closure allocation and indirect calls; set inspection also checks the sized
 traversal's container and entries-node reuse, the absence of a separate membership
 lookup, and that varying insertion rounds remain in the loop. The set inspector reruns
-[HAMTVerifyTests/SetIR.lean](../HAMTVerifyTests/SetIR.lean) to compare wrapper and raw verified entry
+[VerifiedHAMTTests/SetIR.lean](../VerifiedHAMTTests/SetIR.lean) to compare wrapper and raw verified entry
 points after proof erasure.
 
 Assembly is generated from Lake's actual C compilation command by replacing
@@ -102,10 +102,10 @@ insertion and 22 lookup cases), rotating execution order on each sample:
 | CSV prefix | Implementation |
 | --- | --- |
 | `native` | `Lean.PersistentHashSet` |
-| `raw` | Existing total `HAMTVerify.insert` / `contains` on `PersistentHashMap α Unit`, without a size counter |
-| `bundled` | Existing `HAMTVerify.Set`, with its cached size |
-| `bare` | Unsized keys-only `HAMTVerify.SetWithoutValArray.Raw` |
-| `keys` | Bundled `HAMTVerify.SetWithoutValArray`, with cached size and erased invariant proofs |
+| `raw` | Existing total `VerifiedHAMT.insert` / `contains` on `PersistentHashMap α Unit`, without a size counter |
+| `bundled` | Existing `VerifiedHAMT.Set`, with its cached size |
+| `bare` | Unsized keys-only `VerifiedHAMT.SetWithoutValArray.Raw` |
+| `keys` | Bundled `VerifiedHAMT.SetWithoutValArray`, with cached size and erased invariant proofs |
 
 `bundled` is the comparison with the same public semantics and size maintenance;
 `bare` isolates the cost of adding cached size to the keys-only representation.

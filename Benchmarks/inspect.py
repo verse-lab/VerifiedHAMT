@@ -50,7 +50,7 @@ def main():
     (output / "contains.ir.txt").write_text(ir)
 
     native_scan = "Lean.PersistentHashMap.containsAtAux._redArg"
-    total_scan = "HAMTVerify.containsAt._redArg"
+    total_scan = "VerifiedHAMT.containsAt._redArg"
     scan_equal = ir_body(ir, native_scan).replace(native_scan, "SCAN") == ir_body(ir, total_scan).replace(total_scan, "SCAN")
     if not scan_equal:
         raise RuntimeError("Collision scan IR changed; review before claiming identical IR")
@@ -118,7 +118,7 @@ def main():
     metadata = {
         "lean": lean_version,
         "source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in
-                          ("HAMTVerify/Basic.lean", "HAMTVerify/Contains.lean", "Benchmarks/Contains.lean")},
+                          ("VerifiedHAMT/Basic.lean", "VerifiedHAMT/Contains.lean", "Benchmarks/Contains.lean")},
         "generated_c_sha256": hashlib.sha256(c_path.read_bytes()).hexdigest(),
         "assembly_command": compile_args,
         "collision_scan_ir_identical_modulo_name": scan_equal,

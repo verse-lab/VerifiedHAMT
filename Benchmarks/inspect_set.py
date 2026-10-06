@@ -44,13 +44,13 @@ def inspect(root, output, helper, stem, lean):
     source = c_path.read_text()
     selected, timers, hot, loops, cached, sized = [], [], [], [], [], []
     prefixes = (
-        "lp_HAMTVerify_Lean_PersistentHashMap_insertAux___at",
-        "lp_HAMTVerify_HAMTVerify_insertNodeCached___at",
-        "lp_HAMTVerify_HAMTVerify_insertSizedRaw___at",
-        "lp_HAMTVerify_HAMTVerify_insertSizedNoExpand___at",
+        "lp_VerifiedHAMT_Lean_PersistentHashMap_insertAux___at",
+        "lp_VerifiedHAMT_VerifiedHAMT_insertNodeCached___at",
+        "lp_VerifiedHAMT_VerifiedHAMT_insertSizedRaw___at",
+        "lp_VerifiedHAMT_VerifiedHAMT_insertSizedNoExpand___at",
     ) if inserting else (
-        "lp_HAMTVerify_Lean_PersistentHashMap_containsAux___at",
-        "lp_HAMTVerify_HAMTVerify_containsNode___at",
+        "lp_VerifiedHAMT_Lean_PersistentHashMap_containsAux___at",
+        "lp_VerifiedHAMT_VerifiedHAMT_containsNode___at",
     )
     for name, body in helper.c_functions(source):
         timed = body.count("lean_io_mono_nanos_now()") == 2
@@ -65,15 +65,15 @@ def inspect(root, output, helper, stem, lean):
                      "___redArg(" in body.splitlines()[0])
         if traversal:
             hot.append(name)
-            if name.startswith(("lp_HAMTVerify_HAMTVerify_insertNodeCached___at",
-                                "lp_HAMTVerify_HAMTVerify_insertSizedRaw___at",
-                                "lp_HAMTVerify_HAMTVerify_insertSizedNoExpand___at")):
+            if name.startswith(("lp_VerifiedHAMT_VerifiedHAMT_insertNodeCached___at",
+                                "lp_VerifiedHAMT_VerifiedHAMT_insertSizedRaw___at",
+                                "lp_VerifiedHAMT_VerifiedHAMT_insertSizedNoExpand___at")):
                 if "lean_apply_" in body or "lean_alloc_closure" in body:
                     raise RuntimeError(f"Indirect call or closure in cached traversal: {name}")
-                if re.search(r"HAMTVerify_contains(?:Node|At)?___", body):
+                if re.search(r"VerifiedHAMT_contains(?:Node|At)?___", body):
                     raise RuntimeError(f"Separate membership lookup in insertion: {name}")
                 cached.append(name)
-                if name.startswith("lp_HAMTVerify_HAMTVerify_insertSized"):
+                if name.startswith("lp_VerifiedHAMT_VerifiedHAMT_insertSized"):
                     check_sized_reuse(name, body)
                     sized.append(name)
         loop = (inserting and "Range_forIn_x27_loop___at" in name and "Batch___at" in name and
@@ -172,20 +172,20 @@ def main():
     spec = importlib.util.spec_from_file_location("contains_inspection", root / "Benchmarks/inspect.py")
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
-    subprocess.run(["lake", "build", "setContainsBench", "setInsertBench", "HAMTVerifyTests.SetIR"], cwd=root, check=True)
+    subprocess.run(["lake", "build", "setContainsBench", "setInsertBench", "VerifiedHAMTTests.SetIR"], cwd=root, check=True)
     # Re-run the imported-entry-point comparison even when Lake's cache is warm.
-    subprocess.run(["lake", "env", "lean", "HAMTVerifyTests/SetIR.lean"], cwd=root, check=True)
+    subprocess.run(["lake", "env", "lean", "VerifiedHAMTTests/SetIR.lean"], cwd=root, check=True)
     lean = subprocess.check_output(["lake", "env", "lean", "--version"], cwd=root, text=True).strip()
     ir = subprocess.check_output(["lake", "env", "lean", "Benchmarks/InspectSetIR.lean"], cwd=root, text=True)
     (output / "set.ir.txt").write_text(ir)
-    files = ["HAMTVerify.lean", "lean-toolchain", "lakefile.toml", "HAMTVerifyTests/Set.lean", "HAMTVerifyTests/SetIR.lean",
+    files = ["VerifiedHAMT.lean", "lean-toolchain", "lakefile.toml", "VerifiedHAMTTests/Set.lean", "VerifiedHAMTTests/SetIR.lean",
              "Benchmarks/InspectSetIR.lean", "Benchmarks/inspect_set.py", "Benchmarks/inspect.py",
              "Benchmarks/SetContains.lean", "Benchmarks/SetInsert.lean"]
-    files += [str(path.relative_to(root)) for path in sorted((root / "HAMTVerify").glob("*.lean"))]
+    files += [str(path.relative_to(root)) for path in sorted((root / "VerifiedHAMT").glob("*.lean"))]
     metadata = {
         "lean": lean,
         "source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in files},
-        "set_vs_verified_raw_map_ir_check": "HAMTVerifyTests/SetIR.lean passed (Nat insert and contains, declaration names normalized)",
+        "set_vs_verified_raw_map_ir_check": "VerifiedHAMTTests/SetIR.lean passed (Nat insert and contains, declaration names normalized)",
         "benchmarks": {stem: inspect(root, output, helper, stem, lean) for stem in ("SetContains", "SetInsert")},
     }
     (output / "set-compiler.json").write_text(json.dumps(metadata, indent=2) + "\n")

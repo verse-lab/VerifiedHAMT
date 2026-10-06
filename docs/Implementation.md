@@ -12,7 +12,7 @@ its proof fields are erased. `Set` delegates every operation to its underlying
 `Map α Unit`. The native nodes keep their representation. Upstream's opaque set
 insertion and query serve only as test oracles.
 
-`HAMTVerifyTests/MapIR.lean` and `HAMTVerifyTests/SetIR.lean` check this as part
+`VerifiedHAMTTests/MapIR.lean` and `VerifiedHAMTTests/SetIR.lean` check this as part
 of `lake test`. On Lean v4.32.0, the bundled `Nat` insertion and lookup compile to
 the same IR signatures and bodies, including ownership annotations, as direct
 calls of the verified operations on `SizedRaw`, ignoring only declaration names.
@@ -22,7 +22,7 @@ points, not a timing guarantee or an equivalence with upstream. To run one check
 alone:
 
 ```sh
-lake env lean HAMTVerifyTests/MapIR.lean
+lake env lean VerifiedHAMTTests/MapIR.lean
 ```
 
 ## Insertion traversal
@@ -40,7 +40,7 @@ can be updated in place; core's `Array.modify` achieves the same by storing
 `box(0)`, since it has no value of an arbitrary element type to store. Logically
 the clearing write cancels out (`insertEntries_eq`). The compiler may move a pure
 write after the call, though. In the current shape, where every arm writes into
-the cleared array, it keeps the write first, and `HAMTVerifyTests/ReleaseIR.lean`
+the cleared array, it keeps the write first, and `VerifiedHAMTTests/ReleaseIR.lean`
 checks this in the compiled traversals. The child callback also receives a proof
 that the child came from the array, which `insertNoExpand` needs for termination.
 `insertCollisionAux` scans and updates a collision node directly, so its

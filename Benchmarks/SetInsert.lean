@@ -1,10 +1,10 @@
-import HAMTVerify
+import VerifiedHAMT
 
 /-! Paired native-code insertion measurements. Each round starts from the same
 borrowed seed, consumes successive maps, and optionally retains every old map.
 Completed rounds are observed and released inside the timed batch. -/
 
-namespace HAMTVerify.SetInsertBenchmarks
+namespace VerifiedHAMT.SetInsertBenchmarks
 
 private structure RoundResult (α : Type) [BEq α] [Hashable α] where
   finalSet : Lean.PersistentHashSet α
@@ -28,17 +28,17 @@ private structure RoundResult (α : Type) [BEq α] [Hashable α] where
   return ⟨set, history⟩
 
 @[noinline] private def totalRound [BEq α] [LawfulBEq α] [Hashable α]
-    (seed : @& HAMTVerify.Set α) (ops : @& Array α)
+    (seed : @& VerifiedHAMT.Set α) (ops : @& Array α)
     (retain : Bool) (start : Nat) : RoundResult α := Id.run do
   let mut set := seed
   let mut history := #[]
   for h : i in [start:ops.size] do
     if retain then history := history.push set.toRaw
-    set := HAMTVerify.Set.insert set ops[i]
+    set := VerifiedHAMT.Set.insert set ops[i]
   for i in [0:start] do
     if h : i < ops.size then
       if retain then history := history.push set.toRaw
-      set := HAMTVerify.Set.insert set ops[i]
+      set := VerifiedHAMT.Set.insert set ops[i]
   return ⟨set.toRaw, history⟩
 
 -- Common observation code: check the last inserted key in the final set and in
@@ -64,7 +64,7 @@ private structure RoundResult (α : Type) [BEq α] [Hashable α] where
   return checksum
 
 @[noinline] private def totalBatch [BEq α] [LawfulBEq α] [Hashable α]
-    (seed : @& HAMTVerify.Set α) (ops : @& Array α)
+    (seed : @& VerifiedHAMT.Set α) (ops : @& Array α)
     (retain : Bool) (rounds : Nat) : UInt64 := Id.run do
   let mut checksum : UInt64 := 0
   for round in [0:rounds] do
@@ -88,7 +88,7 @@ private def measureNative [BEq α] [Hashable α]
   return ⟨stop - start, checksum⟩
 
 private def measureTotal [BEq α] [LawfulBEq α] [Hashable α]
-    (seed : HAMTVerify.Set α) (ops : Array α)
+    (seed : VerifiedHAMT.Set α) (ops : Array α)
     (retain : Bool) (rounds : Nat) : IO Measurement := do
   let start ← IO.monoNanosNow
   let checksum := totalBatch seed ops retain rounds
@@ -144,7 +144,7 @@ private def runCase [BEq α] [LawfulBEq α] [Hashable α] (label mode : String) 
     (baseSize opCount samples targetMs : Nat) : IO Unit := do
   let retain := mode == "snapshots"
   let replacing := mode == "duplicate"
-  let mut seed : HAMTVerify.Set α := ∅
+  let mut seed : VerifiedHAMT.Set α := ∅
   for id in [0:baseSize] do
     seed := seed.insert (makeKey id)
   let nativeSeed := seed.toRaw
@@ -221,7 +221,7 @@ def run (samples targetMs : Nat) : IO Unit := do
   runNat "nat-collision" "snapshots" (fun _ => 0) 128 128 samples targetMs
   runCase "name-default" "snapshots" nameKey 16384 512 samples targetMs
 
-end HAMTVerify.SetInsertBenchmarks
+end VerifiedHAMT.SetInsertBenchmarks
 
 def main (args : List String) : IO Unit := do
   let (samples, targetMs) ← match args with
@@ -231,4 +231,4 @@ def main (args : List String) : IO Unit := do
       | _, _ => throw <| IO.userError "usage: setInsertBench [samples target_ms]"
     | _ => throw <| IO.userError "usage: setInsertBench [samples target_ms]"
   unless samples > 0 && targetMs > 0 do throw <| IO.userError "samples and target_ms must be positive"
-  HAMTVerify.SetInsertBenchmarks.run samples targetMs
+  VerifiedHAMT.SetInsertBenchmarks.run samples targetMs

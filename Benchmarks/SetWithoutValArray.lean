@@ -1,4 +1,4 @@
-import HAMTVerify
+import VerifiedHAMT
 
 /-! Five-way native-code comparison. `raw` uses the existing total insertion on
 `PersistentHashMap α Unit` without a cached size, providing a representation-only
@@ -6,7 +6,7 @@ control. `bundled` is the existing public Set API (with cached size), `bare` is
 the unsized keys-only raw set, and `keys` is its verified public API with a count.
 Higher-order round/batch functions specialize to direct calls for each backend. -/
 
-namespace HAMTVerify.KeysOnlyBench
+namespace VerifiedHAMT.KeysOnlyBench
 
 private structure Result (σ : Type) where
   finalSet : σ
@@ -122,7 +122,7 @@ private def validate [Inhabited σ] (contains : σ → α → Bool) (keyOf : Nat
 private def runCase [BEq α] [LawfulBEq α] [Hashable α]
     (label mode : String) (keyOf : Nat → α)
     (size opCount samples targetMs : Nat) : IO Unit := do
-  let mut bundled : HAMTVerify.Set α := ∅
+  let mut bundled : VerifiedHAMT.Set α := ∅
   let mut keys : SetWithoutValArray α := ∅
   for i in [0:size] do
     bundled := bundled.insert (keyOf i)
@@ -140,36 +140,36 @@ private def runCase [BEq α] [LawfulBEq α] [Hashable α]
       let id := (state >>> 32).toNat % max size 1
       let found := size > 0 && (hits == 100 || (hits == 50 && i % 2 == 0))
       let q := keyOf (if found then id else size + id)
-      unless native.contains q == found && HAMTVerify.contains raw q == found &&
+      unless native.contains q == found && VerifiedHAMT.contains raw q == found &&
           bundled.contains q == found && bare.contains q == found && keys.contains q == found do
         throw <| IO.userError s!"{label}/{mode}: lookup mismatch"
       queries := queries.push q
       if found then expected := expected + 1
     sample label mode size opCount expected samples targetMs #[
       containsBatch Lean.PersistentHashSet.contains native queries,
-      containsBatch HAMTVerify.contains raw queries,
-      containsBatch HAMTVerify.Set.contains bundled queries,
+      containsBatch VerifiedHAMT.contains raw queries,
+      containsBatch VerifiedHAMT.Set.contains bundled queries,
       containsBatch SetWithoutValArray.Raw.contains bare queries,
       containsBatch SetWithoutValArray.contains keys queries]
   else
     let retain := mode == "snapshots"
     let ids := (shuffled opCount).map fun i => if mode == "duplicate" then i % size else size + i
     let ops := ids.map keyOf
-    let rawInsert := fun s k => HAMTVerify.insert s k ()
+    let rawInsert := fun s k => VerifiedHAMT.insert s k ()
     for start in #[0, opCount / 2] do
       validate Lean.PersistentHashSet.contains keyOf size ids retain start
         (round Lean.PersistentHashSet.insert native ops retain start)
-      validate HAMTVerify.contains keyOf size ids retain start (round rawInsert raw ops retain start)
-      validate HAMTVerify.Set.contains keyOf size ids retain start
-        (round HAMTVerify.Set.insert bundled ops retain start)
+      validate VerifiedHAMT.contains keyOf size ids retain start (round rawInsert raw ops retain start)
+      validate VerifiedHAMT.Set.contains keyOf size ids retain start
+        (round VerifiedHAMT.Set.insert bundled ops retain start)
       validate SetWithoutValArray.contains keyOf size ids retain start
         (round SetWithoutValArray.insert keys ops retain start)
       validate SetWithoutValArray.Raw.contains keyOf size ids retain start
         (round SetWithoutValArray.Raw.insert bare ops retain start)
     sample label mode size opCount (1 + if retain then opCount else 0) samples targetMs #[
       insertBatch Lean.PersistentHashSet.insert Lean.PersistentHashSet.contains native ops retain,
-      insertBatch rawInsert HAMTVerify.contains raw ops retain,
-      insertBatch HAMTVerify.Set.insert HAMTVerify.Set.contains bundled ops retain,
+      insertBatch rawInsert VerifiedHAMT.contains raw ops retain,
+      insertBatch VerifiedHAMT.Set.insert VerifiedHAMT.Set.contains bundled ops retain,
       insertBatch SetWithoutValArray.Raw.insert SetWithoutValArray.Raw.contains bare ops retain,
       insertBatch SetWithoutValArray.insert SetWithoutValArray.contains keys ops retain]
 
@@ -208,7 +208,7 @@ def run (samples targetMs : Nat) : IO Unit := do
     runNat "nat-collision" mode (fun _ => 0) 128 8192 samples targetMs
     runCase "name-default" mode nameKey 16384 8192 samples targetMs
 
-end HAMTVerify.KeysOnlyBench
+end VerifiedHAMT.KeysOnlyBench
 
 def main (args : List String) : IO Unit := do
   let (samples, targetMs) ← match args with
@@ -218,4 +218,4 @@ def main (args : List String) : IO Unit := do
       | _, _ => throw <| IO.userError "usage: setWithoutValArrayBench [samples target_ms]"
     | _ => throw <| IO.userError "usage: setWithoutValArrayBench [samples target_ms]"
   unless samples > 0 && targetMs > 0 do throw <| IO.userError "arguments must be positive"
-  HAMTVerify.KeysOnlyBench.run samples targetMs
+  VerifiedHAMT.KeysOnlyBench.run samples targetMs

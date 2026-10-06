@@ -1,7 +1,7 @@
 # Set without value arrays
 
-`HAMTVerify.SetWithoutValArray` is a verified, bundled counterpart of
-`HAMTVerify.Set`, with constant-time `size`. Its leaves store only keys and its
+`VerifiedHAMT.SetWithoutValArray` is a verified, bundled counterpart of
+`VerifiedHAMT.Set`, with constant-time `size`. Its leaves store only keys and its
 collision buckets only an `Array α`. There are no value fields or `vals` arrays.
 The 32-way entries arrays, four-key promotion threshold, and maximum promotion
 depth of seven are unchanged.
@@ -9,9 +9,9 @@ depth of seven are unchanged.
 ## Public API
 
 ```lean
-import HAMTVerify.SetWithoutValArray
-open HAMTVerify
-open scoped HAMTVerify.SetWithoutValArray
+import VerifiedHAMT.SetWithoutValArray
+open VerifiedHAMT
+open scoped VerifiedHAMT.SetWithoutValArray
 
 def s : SetWithoutValArray Nat := .ofList [7, 3, 7]
 #eval s.size -- 2 (field access)
@@ -33,16 +33,16 @@ enumeration, and size. The public type bundles `Valid`, `Unique`, and
 `size_eq : size = Raw.keyCount toRaw.root`; clients do not supply invariant
 hypotheses. `mem_toList`, `nodup_toList`, and `length_toList` prove that
 `toList` enumerates each element once and that its length is the cached size.
-Its slot order matches `HAMTVerify.Set.toList`.
+Its slot order matches `VerifiedHAMT.Set.toList`.
 
 `toRaw` returns the keys-only `SetWithoutValArray.Raw` in constant time.
 `ofRaw` requires proofs of routing and uniqueness and counts the keys in linear
-time and memory, like `HAMTVerify.Set.ofRaw`. There is no zero-copy native-map
+time and memory, like `VerifiedHAMT.Set.ofRaw`. There is no zero-copy native-map
 bridge or `toMap`/`ofMap`, since the node types differ.
 
 ## Reusing sized insertion
 
-The implementation adapts the previous `HAMTVerify.InsertSized` design:
+The implementation adapts the previous `VerifiedHAMT.InsertSized` design:
 
 1. A `Raw.SizedRaw` holds the raw root and the **whole set's count**. The public
    set extends this exact container, adding only erased proof fields. Counts
@@ -74,22 +74,22 @@ The implementation adapts the previous `HAMTVerify.InsertSized` design:
 All implementation functions are total. No library implementation uses
 `partial`, `unsafe`, `sorry`, or `implemented_by`. The main axioms are checked:
 only `propext`, `Classical.choice`, and `Quot.sound` occur. Public simp rules are
-scoped to `HAMTVerify.SetWithoutValArray`; raw implementation rules are scoped
+scoped to `VerifiedHAMT.SetWithoutValArray`; raw implementation rules are scoped
 to its `Raw` namespace.
 
 ## Validation
 
 `lake test` checks proof examples, axiom dependencies, and 240,240 query
 comparisons for the keys-only API. It checks every intermediate cached size
-against a list model and `HAMTVerify.Set`, compares tree shapes and enumeration,
+against a list model and `VerifiedHAMT.Set`, compares tree shapes and enumeration,
 and checks every retained old version after subsequent insertions. Workloads
 include distinct and repeated keys, default/identity/shared-prefix/constant/
 high-bit hashes, and Name keys. Raw-level tests cover malformed short entries
 arrays and the zero-promotion-level collision worker.
 
-`HAMTVerifyTests/ReleaseIR.lean` checks slot clearing before recursive insertion
+`VerifiedHAMTTests/ReleaseIR.lean` checks slot clearing before recursive insertion
 for both sized and unsized workers and their Nat specializations.
-`HAMTVerifyTests/SetWithoutValArrayIR.lean` checks that insertion and lookup
+`VerifiedHAMTTests/SetWithoutValArrayIR.lean` checks that insertion and lookup
 compile identically to direct operations on `Raw.SizedRaw`, after proof erasure.
 It also checks that `size` compiles identically to a plain field projection.
 The benchmark runner rejects indirect calls in specialized round and query
@@ -113,7 +113,7 @@ several hash distributions. Five backends run in rotating order:
 | --- | --- |
 | `native` | `Lean.PersistentHashSet` |
 | `raw` | Existing total `PersistentHashMap α Unit` operations without a size counter |
-| `bundled` | `HAMTVerify.Set`, with cached size and erased proofs |
+| `bundled` | `VerifiedHAMT.Set`, with cached size and erased proofs |
 | `bare` | Unsized keys-only `SetWithoutValArray.Raw` |
 | `keys` | Public `SetWithoutValArray`, with cached size and erased proofs |
 
@@ -199,7 +199,7 @@ Elapsed-time ratios, public keys-only set divided by each baseline:
 | --- | ---: | ---: |
 | Native `PersistentHashSet` | 0.982 | 0.874 |
 | Unsized unit-valued raw map | 0.970 | 0.998 |
-| Bundled `HAMTVerify.Set` | **0.915** | **0.999** |
+| Bundled `VerifiedHAMT.Set` | **0.915** | **0.999** |
 | Unsized keys-only raw tree | 1.058 | 1.000 |
 
 Relative to the comparable public `Set`, insertion took 8.5% less time in the
@@ -308,4 +308,4 @@ identical to the baseline; `final-code-comparison.json` records the hashes.
 
 Ratios below one indicate less time. These are comparisons with the same
 keys-only implementation before the attribute changes, not with the unit-valued
-`HAMTVerify.Set`; the Set backend is only a timing control in the last column.
+`VerifiedHAMT.Set`; the Set backend is only a timing control in the last column.

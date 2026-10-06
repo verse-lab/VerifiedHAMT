@@ -1,4 +1,4 @@
-# HAMTVerify
+# VerifiedHAMT
 
 Verified membership queries and insertion for Lean's native hash array mapped
 trie, `Lean.PersistentHashMap`, with bundled map and set APIs whose theorems need
@@ -10,9 +10,9 @@ required.
 ### Bundled map API
 
 ```lean
-import HAMTVerify
-open HAMTVerify
-open scoped HAMTVerify.Map
+import VerifiedHAMT
+open VerifiedHAMT
+open scoped VerifiedHAMT.Map
 
 def exampleMap : Map Nat String :=
   Map.ofList [(7, "old"), (3, "three"), (7, "new")]
@@ -30,7 +30,7 @@ example (m : Map Nat String) (k : Nat) (v w : String) :
   simp
 ```
 
-`HAMTVerify.Map α β` bundles a native map with its number of keys and two
+`VerifiedHAMT.Map α β` bundles a native map with its number of keys and two
 invariants, `Valid` (every key is in the slot its hash selects) and `Unique` (no
 duplicate keys), following the
 [`Std.TreeMap` / `Std.DTreeMap` design](https://lean-lang.org/doc/api/Std/Data/DTreeMap/Basic.html#Std.DTreeMap).
@@ -38,14 +38,14 @@ duplicate keys), following the
 automatically. Maps provide `contains`, decidable `∈`, `size`, `keys`, and the
 binding relation `MapsTo`. Keys need `[BEq α] [Hashable α]`, plus `[LawfulBEq α]`
 for insertion and the correctness theorems; values need no instances. The simp
-lemmas are scoped: `open scoped HAMTVerify.Map`.
+lemmas are scoped: `open scoped VerifiedHAMT.Map`.
 
 ### Bundled set API
 
 ```lean
-import HAMTVerify
-open HAMTVerify
-open scoped HAMTVerify.Set
+import VerifiedHAMT
+open VerifiedHAMT
+open scoped VerifiedHAMT.Set
 
 def exampleSet : Set Nat := Set.ofList [7, 3, 7]
 
@@ -63,11 +63,11 @@ example (xs : List Nat) (k : Nat) :
   simp
 ```
 
-`HAMTVerify.Set α` wraps `Map α Unit`, as
+`VerifiedHAMT.Set α` wraps `Map α Unit`, as
 [`Lean.PersistentHashSet`](https://lean-lang.org/doc/api/Lean/Data/PersistentHashSet.html#Lean.PersistentHashSet)
 wraps `PersistentHashMap α Unit`. It provides the corresponding operations,
 including `size` and `toList`, with the same instance requirements. Its simp
-lemmas are activated by `open scoped HAMTVerify.Set`.
+lemmas are activated by `open scoped VerifiedHAMT.Set`.
 
 ### Native representation
 
@@ -84,15 +84,15 @@ the same IR as direct calls on that data.
 
 ### Bundled set without values
 
-`HAMTVerify.SetWithoutValArray α` uses a separate keys-only representation:
+`VerifiedHAMT.SetWithoutValArray α` uses a separate keys-only representation:
 `Entry.entry key` and `Node.collision keys`, with no value fields or `vals`
 arrays. It keeps the native branching factor, promotion threshold, and depth
 limit, adapting this project's total insertion and membership implementations.
 
 ```lean
-import HAMTVerify.SetWithoutValArray
-open HAMTVerify
-open scoped HAMTVerify.SetWithoutValArray
+import VerifiedHAMT.SetWithoutValArray
+open VerifiedHAMT
+open scoped VerifiedHAMT.SetWithoutValArray
 
 def compactSet : SetWithoutValArray Nat := .ofList [7, 3, 7]
 #eval compactSet.contains 3 -- true
@@ -103,7 +103,7 @@ example (xs : List Nat) (key : Nat) :
     (SetWithoutValArray.ofList xs).contains key = xs.contains key := by simp
 ```
 
-The collection API follows `HAMTVerify.Set`: `empty`, literals, `insert`,
+The collection API follows `VerifiedHAMT.Set`: `empty`, literals, `insert`,
 `ofList`, `contains`, decidable structural membership, `toList`, and **O(1)
 `size`**. It bundles routing, uniqueness, and count-correctness proofs, so the
 public theorems need no invariant hypotheses. `size_insert`, `mem_toList`,
@@ -136,7 +136,7 @@ Membership `k ∈ m` and `MapsTo` are structural: the key, or the key/value pair
 is stored somewhere in the tree. They are defined independently of the
 hash-directed algorithms. `Set` has the corresponding theorems, such as
 `Set.mem_insert_iff`, `Set.mem_ofList`, and `Set.size_insert`. Unbundled versions
-in the `HAMTVerify` namespace apply to any native map, taking `Valid` and `Unique`
+in the `VerifiedHAMT` namespace apply to any native map, taking `Valid` and `Unique`
 as hypotheses; the membership results need only `Valid`.
 
 The proofs depend only on the axioms `propext`, `Classical.choice`, and
@@ -146,8 +146,8 @@ equal to simple specifications and installed as `@[csimp]` rewrites.
 
 ## Scope
 
-- The theorems concern this project's total `HAMTVerify.contains` and
-  `HAMTVerify.insert`. These run on Lean's native `Node` and `Entry` types with
+- The theorems concern this project's total `VerifiedHAMT.contains` and
+  `VerifiedHAMT.insert`. These run on Lean's native `Node` and `Entry` types with
   the same hashing scheme and bucket promotion as upstream, but are not proved
   equivalent to upstream's `partial` implementations (`containsAux`,
   `insertAux`, …), which are opaque to the kernel. Tests compare against those
@@ -178,15 +178,15 @@ hash functions, including a constant one.
 
 | Path | Contents |
 | --- | --- |
-| `HAMTVerify/Basic.lean` | structural membership and bindings, `Valid`, `Unique`, empty map |
-| `HAMTVerify/Size.lean` | structural key list and count |
-| `HAMTVerify/Contains.lean` | total `contains` and its correctness proofs |
-| `HAMTVerify/Bindings.lean` | `Updated` and lemmas for replacing an entries slot |
-| `HAMTVerify/Insert.lean` | total insertion with cached hashes |
-| `HAMTVerify/InsertProofs.lean` | invariant preservation; membership, binding, and key-count laws |
-| `HAMTVerify/InsertSized.lean` | insertion that also updates the size |
-| `HAMTVerify/ContainsThenInsert.lean` | fused membership test and insertion |
-| `HAMTVerify/Map.lean`, `HAMTVerify/Set.lean` | bundled APIs |
-| `HAMTVerify/SetWithoutValArray/` | keys-only bundled set, fused size maintenance, membership/uniqueness/count proofs |
-| `HAMTVerifyTests/` | proof examples, axiom and IR checks, regression tests |
+| `VerifiedHAMT/Basic.lean` | structural membership and bindings, `Valid`, `Unique`, empty map |
+| `VerifiedHAMT/Size.lean` | structural key list and count |
+| `VerifiedHAMT/Contains.lean` | total `contains` and its correctness proofs |
+| `VerifiedHAMT/Bindings.lean` | `Updated` and lemmas for replacing an entries slot |
+| `VerifiedHAMT/Insert.lean` | total insertion with cached hashes |
+| `VerifiedHAMT/InsertProofs.lean` | invariant preservation; membership, binding, and key-count laws |
+| `VerifiedHAMT/InsertSized.lean` | insertion that also updates the size |
+| `VerifiedHAMT/ContainsThenInsert.lean` | fused membership test and insertion |
+| `VerifiedHAMT/Map.lean`, `VerifiedHAMT/Set.lean` | bundled APIs |
+| `VerifiedHAMT/SetWithoutValArray/` | keys-only bundled set, fused size maintenance, membership/uniqueness/count proofs |
+| `VerifiedHAMTTests/` | proof examples, axiom and IR checks, regression tests |
 | `Benchmarks/` | benchmark workloads, runner, compiler inspection |

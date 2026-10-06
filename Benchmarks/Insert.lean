@@ -1,10 +1,10 @@
-import HAMTVerify
+import VerifiedHAMT
 
 /-! Paired native-code insertion measurements. Each round starts from the same
 borrowed seed, consumes successive maps, and optionally retains every old map.
 Completed rounds are observed and released inside the timed batch. -/
 
-namespace HAMTVerify.InsertBenchmarks
+namespace VerifiedHAMT.InsertBenchmarks
 
 private structure RoundResult (α : Type) [BEq α] [Hashable α] where
   finalMap : Lean.PersistentHashMap α Nat
@@ -29,7 +29,7 @@ private structure RoundResult (α : Type) [BEq α] [Hashable α] where
   let mut history := #[]
   for (key, value) in ops do
     if retain then history := history.push map
-    map := HAMTVerify.insert map key (value + salt)
+    map := VerifiedHAMT.insert map key (value + salt)
   return ⟨map, history⟩
 
 -- One lookup per completed round, plus one snapshot lookup when retaining
@@ -208,7 +208,7 @@ def run (samples targetMs : Nat) : IO Unit := do
   runNat "nat-collision" "snapshots" (fun _ => 0) 128 128 samples targetMs
   runCase "name-default" "snapshots" nameKey 16384 512 samples targetMs
 
-end HAMTVerify.InsertBenchmarks
+end VerifiedHAMT.InsertBenchmarks
 
 def main (args : List String) : IO Unit := do
   let (samples, targetMs) ← match args with
@@ -218,4 +218,4 @@ def main (args : List String) : IO Unit := do
       | _, _ => throw <| IO.userError "usage: insertBench [samples target_ms]"
     | _ => throw <| IO.userError "usage: insertBench [samples target_ms]"
   unless samples > 0 && targetMs > 0 do throw <| IO.userError "samples and target_ms must be positive"
-  HAMTVerify.InsertBenchmarks.run samples targetMs
+  VerifiedHAMT.InsertBenchmarks.run samples targetMs

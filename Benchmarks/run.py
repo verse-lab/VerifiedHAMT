@@ -78,13 +78,13 @@ def main():
             "process_ratio_medians": run_medians,
         })
 
-    source_files = ("HAMTVerify/Basic.lean", "HAMTVerify/Contains.lean", "Benchmarks/Contains.lean",
+    source_files = ("VerifiedHAMT/Basic.lean", "VerifiedHAMT/Contains.lean", "Benchmarks/Contains.lean",
                     "Benchmarks/run.py", "lakefile.toml", "lean-toolchain")
     if kind == "insert" or set_benchmark:
         benchmark_source = {"insert": "Insert", "setContains": "SetContains", "setInsert": "SetInsert"}[kind]
-        source_files = ("HAMTVerify.lean", f"Benchmarks/{benchmark_source}.lean", "Benchmarks/run.py",
+        source_files = ("VerifiedHAMT.lean", f"Benchmarks/{benchmark_source}.lean", "Benchmarks/run.py",
                         "lakefile.toml", "lean-toolchain") + tuple(
-                            str(path.relative_to(root)) for path in sorted((root / "HAMTVerify").glob("*.lean")))
+                            str(path.relative_to(root)) for path in sorted((root / "VerifiedHAMT").glob("*.lean")))
     report = {
         "schema_version": 2,
         "benchmark": kind,
