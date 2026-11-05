@@ -137,7 +137,7 @@ theorem insertNode_wf_mem [BEq α] [LawfulBEq α] [Hashable α] (levels : Nat)
       cases hb with
       | mk keys' =>
         simp only [getCollisionNodeSize]
-        split
+        by_cases hlt : keys'.size < Lean.PersistentHashMap.maxCollisions <;> simp only [hlt, ↓reduceIte]
         · exact ⟨.collision _ _, hm⟩
         · have rebuilt := rebuild_wf_mem (insertNode levels (offset + shift)) offset childSpec
             keys' 0 mkEmptyEntriesArray (wellFormed_empty _)

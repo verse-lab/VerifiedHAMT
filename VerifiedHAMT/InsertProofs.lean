@@ -212,7 +212,7 @@ theorem insertNode_wf_mem [BEq α] [LawfulBEq α] [Hashable α] (levels : Nat)
       cases hb with
       | mk keys' vals' hsz' =>
         simp only [getCollisionNodeSize]
-        split
+        by_cases hlt : keys'.size < maxCollisions <;> simp only [hlt, ↓reduceIte]
         · exact ⟨.collision _ _ _ _, hm⟩
         · have rebuilt := rebuild_wf_mem (insertNode levels (offset + shift)) offset childSpec
             keys' vals' hsz' 0 mkEmptyEntriesArray (wellFormed_empty _)
@@ -303,7 +303,7 @@ theorem insertNode_unique_updated [BEq α] [LawfulBEq α] [Hashable α] (levels 
       cases hb with
       | mk keys' vals' hsz' =>
         simp only [getCollisionNodeSize]
-        split
+        by_cases hlt : keys'.size < maxCollisions <;> simp only [hlt, ↓reduceIte]
         · exact uv
         · have distinct' : DistinctKeys keys' := by cases uv.1 with | collision h => exact h
           have rebuilt := rebuild_unique_bindings (insertNode levels (offset + shift)) offset

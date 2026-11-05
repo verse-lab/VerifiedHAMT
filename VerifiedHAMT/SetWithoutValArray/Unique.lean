@@ -117,7 +117,7 @@ theorem insertNode_unique [BEq α] [LawfulBEq α] [Hashable α] (levels : Nat)
       cases hb with
       | mk keys' =>
         simp only [getCollisionNodeSize]
-        split
+        by_cases hlt : keys'.size < Lean.PersistentHashMap.maxCollisions <;> simp only [hlt, ↓reduceIte]
         · exact ub
         · exact rebuild_unique (insertNode levels (offset + shift)) offset
             childWF childUnique keys' 0 mkEmptyEntriesArray (wellFormed_empty _) unique_empty
