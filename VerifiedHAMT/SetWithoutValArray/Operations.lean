@@ -113,8 +113,8 @@ theorem size_insert [LawfulBEq α] (set : SetWithoutValArray α) (key : α) :
     (set.insert key).size = if key ∈ set then set.size else set.size + 1 := by
   change (if set.contains key then set.size else set.size + 1) = _
   by_cases h : key ∈ set
-  · rw [if_pos ((contains_eq_true_iff set key).mpr h), if_pos h]
-  · rw [if_neg (mt (contains_eq_true_iff set key).mp h), if_neg h]
+  · rw [ite_eq_left ((contains_eq_true_iff set key).mpr h), ite_eq_left h]
+  · rw [ite_eq_right (mt (contains_eq_true_iff set key).mp h), ite_eq_right h]
 
 @[scoped simp] theorem contains_empty [LawfulBEq α] (key : α) :
     (∅ : SetWithoutValArray α).contains key = false := Raw.contains_empty key

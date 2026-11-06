@@ -76,7 +76,7 @@ theorem insertEntries_eq [BEq α] (es : Array (Entry α β (Node α β)))
         | .entry k v, _ => if key == k then .entry key value
             else .ref (mkCollisionNode k v key value)
         | .ref child, hmem => .ref (childInsert child hmem (nextHash h) key value)) hi := by
-  simp only [insertEntries, dif_pos hi]
+  simp only [insertEntries, dite_eq_left hi]
   split <;> split <;> (try split) <;> simp_all
 
 -- A special path for insertion below the depth limit

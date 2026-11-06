@@ -176,7 +176,7 @@ theorem findNode_exists_of_hasKey [BEq α] [LawfulBEq α] {hashAt : α → USize
     obtain ⟨i, hi, hk⟩ := hasKey_entries.mp member
     have hslot := routing i hi key hk
     subst i
-    rw [findNode_entries, dif_pos hi]
+    rw [findNode_entries, dite_eq_left hi]
     cases he : es[slot (hashAt key)] with
     | null => simp [he, EntryHasKey] at hk
     | entry key' value =>

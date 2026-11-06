@@ -73,7 +73,7 @@ theorem containsNode_sound [BEq α] [LawfulBEq α] (node : Node α β)
     exact found
   | entries es =>
     by_cases hi : slot hash < es.size
-    · rw [containsNode, dif_pos hi] at found
+    · rw [containsNode, dite_eq_left hi] at found
       split at found
       · contradiction
       · rename_i key' value he
@@ -103,7 +103,7 @@ theorem containsNode_complete [BEq α] [LawfulBEq α] {hashAt : α → USize}
     obtain ⟨i, hi, hkey⟩ := hasKey_entries.mp member
     have hslot := routing i hi key hkey
     subst i
-    rw [containsNode, dif_pos hi]
+    rw [containsNode, dite_eq_left hi]
     cases he : es[slot (hashAt key)] <;> simp [EntryHasKey] at * <;> grind
 
 theorem containsNode_eq_true_iff [BEq α] [LawfulBEq α] {hashAt : α → USize}

@@ -217,8 +217,8 @@ theorem size_insert [LawfulBEq α] (map : Map α β) (key : α) (value : β) :
     (map.insert key value).size = if key ∈ map then map.size else map.size + 1 := by
   change (if map.contains key then map.size else map.size + 1) = _
   by_cases h : key ∈ map
-  · rw [if_pos ((contains_eq_true_iff map key).mpr h), if_pos h]
-  · rw [if_neg (mt (contains_eq_true_iff map key).mp h), if_neg h]
+  · rw [ite_eq_left ((contains_eq_true_iff map key).mpr h), ite_eq_left h]
+  · rw [ite_eq_right (mt (contains_eq_true_iff map key).mp h), ite_eq_right h]
 
 @[scoped simp] theorem contains_insert [LawfulBEq α] (map : Map α β) (key q : α) (value : β) :
     (map.insert key value).contains q = ((q == key) || map.contains q) :=
